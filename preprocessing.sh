@@ -25,7 +25,7 @@ echo ""
 mkdir -p "${OUTPUT_DIR}"
 cd "${SCRIPT_DIR}"
 python sampling/compute_sdf.py \
-  --input-dir "${INPUT_DIR}" \
+  --input-dir "${INPUT_DIR}/models" \
   --output-dir "${OUTPUT_DIR}"
 
 echo ""
