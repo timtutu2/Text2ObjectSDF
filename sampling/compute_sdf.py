@@ -157,13 +157,25 @@ def compute_and_save(
 
 
 def find_obj_in_dir(dir_path: str) -> str | None:
-    """Return path to first .obj in directory (e.g. model.obj or any *.obj)."""
-    for name in ("model.obj", "model_normalized.obj"):
-        p = os.path.join(dir_path, name)
-        if os.path.isfile(p):
-            return p
-    objs = sorted(glob.glob(os.path.join(dir_path, "*.obj")))
-    return objs[0] if objs else None
+    """
+    Return path to first .obj for a model.
+
+    Handles both:
+      - Flat layout: <dir_path>/*.obj
+      - ShapeNet-style layout: <dir_path>/models/*.obj
+    """
+    # 2) Try a deeper \"models\" subdirectory (ShapeNet-style)
+    models_dir = os.path.join(dir_path, "models")
+    if os.path.isdir(models_dir):
+        for name in ("model.obj", "model_normalized.obj"):
+            p = os.path.join(models_dir, name)
+            if os.path.isfile(p):
+                return p
+        objs = sorted(glob.glob(os.path.join(models_dir, "*.obj")))
+        if objs:
+            return objs[0]
+
+    return None
 
 
 def main():
