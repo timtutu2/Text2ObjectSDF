@@ -7,10 +7,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INPUT_DIR="/mnt/tim/data/ShapeNetCore/03001627_objs/03001627"
-OUTPUT_DIR="/mnt/tim/data/ShapeNetCore/03001627_sdf"
+INPUT_DIR="/mnt/tim/data/ShapeNetCore/04379243"
+OUTPUT_DIR="/mnt/tim/data/ShapeNetCore/04379243_sdf"
 LOG_DIR="/mnt/tim/text2objectsdf/logs"
-LOG_FILE="${LOG_DIR}/preprocessing_03001627.log"
+LOG_FILE="${LOG_DIR}/preprocessing_04379243.log"
 
 mkdir -p "${LOG_DIR}"
 exec > >(tee "${LOG_FILE}") 2>&1
