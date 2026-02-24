@@ -1,0 +1,42 @@
+# configs/default.yaml
+
+experiment_name: "text2object_baseline"
+
+# 1. Network Architecture
+model:
+  text_embed_dim: 512       # CLIP ViT-B/32 output dimension.
+  latent_dim: 128           # VAE latent space dimension (z).
+  hidden_dim: 256           # FiLM decoder hidden layer width.
+  num_layers: 4             # Number of FiLM decoder layers.
+
+  num_embeddings: 512       # VQ codebook size.
+
+  hashgrid:
+    n_levels: 16
+    n_features_per_level: 4
+    log2_hashmap_size: 21
+    base_resolution: 16
+
+# 2. Training Hyperparameters
+training:
+  batch_size: 4
+  num_epochs: 800
+  learning_rate: 0.0005
+  points_per_batch: 8192
+  save_interval: 100
+  warmup_epochs: 100        # Phase 1: linear ramp from ~0 → lr.
+  stable_epochs: 300        # Phase 2: constant at lr  (800-100-300 = 400 decay epochs).
+
+# 3. Loss Weights
+loss:
+  truncation_dist: 0.07      # SDF truncation distance (tau).
+  lambda_codebook: 1.0      # Weight for VQ codebook loss (moves codebook → encoder).
+  commitment_cost: 0.25     # Weight for commitment loss β (moves encoder → codebook).
+  lambda_eik: 0.0005        # Eikonal regularization weight.
+
+# 4. Inference / Meshing
+inference:
+  resolution: 128           # Marching Cubes grid resolution.
+  chunk_size: 100000        # Points per chunk to avoid OOM.
+  threshold: 0.0            # Iso-surface threshold (zero-level set).
+  cfg_scale: 3.0            # Classifier-Free Guidance Intensity (1.0 = none, recommend: 3.0~7.0)

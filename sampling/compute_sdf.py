@@ -1,7 +1,7 @@
 """
 Ground-truth SDF sampling for Text2ObjectSDF.
 
-For each model_normalized_N.obj:
+For each model_normalized_N.obj (or each .obj in --input-dir subdirs):
   1. Load mesh and re-normalize vertices into [0, 1]^3.
   2. Sample query points:
        - Near-surface points (fine band):  surface sample + Gaussian noise sigma=0.005
@@ -10,7 +10,7 @@ For each model_normalized_N.obj:
   3. Compute signed distance for every query point via pysdf (C++ BVH, headless).
      Sign convention: negative inside the mesh, positive outside  (standard SDF).
   4. Truncate SDF at threshold tau (clamp to [-tau, tau]).
-  5. Save sdf_data_N.npz with keys:
+  5. Save sdf_data_N.npz (or {model_id}.npz) with keys:
        'points'    (N, 3) float32  -- query coordinates in [0, 1]^3
        'sdf'       (N,)   float32  -- raw SDF values
        'sdf_clamp' (N,)   float32  -- clamped to [-tau, tau]
@@ -19,9 +19,14 @@ Dependencies:
     pip install trimesh pysdf rtree numpy
 
 Usage:
+    # Process model_normalized_*.obj in script directory (legacy):
     python sampling/compute_sdf.py
+
+    # Process ShapeNet-style dir (one .obj per subfolder), write SDFs to output dir:
+    python sampling/compute_sdf.py --input-dir /path/to/03001627_objs/03001627 --output-dir /path/to/03001627_sdf
 """
 
+import argparse
 import os
 import glob
 import numpy as np
@@ -151,15 +156,82 @@ def compute_and_save(
     print(f"  Saved -> {out_path}.npz  ({size_mb:.1f} MB)")
 
 
+def find_obj_in_dir(dir_path: str) -> str | None:
+    """Return path to first .obj in directory (e.g. model.obj or any *.obj)."""
+    for name in ("model.obj", "model_normalized.obj"):
+        p = os.path.join(dir_path, name)
+        if os.path.isfile(p):
+            return p
+    objs = sorted(glob.glob(os.path.join(dir_path, "*.obj")))
+    return objs[0] if objs else None
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Compute ground-truth SDF from OBJ meshes.")
+    parser.add_argument(
+        "--input-dir",
+        type=str,
+        default=None,
+        help="Directory containing one subfolder per model, each with a .obj file (e.g. ShapeNet 03001627_objs/03001627).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Directory to write .npz SDF files (used with --input-dir). Each file named {model_id}.npz.",
+    )
+    args = parser.parse_args()
+
     rng = np.random.default_rng(RANDOM_SEED)
 
+    if args.input_dir is not None and args.output_dir is not None:
+        # ShapeNet-style: input_dir has subdirs, each with one .obj
+        input_dir = os.path.abspath(args.input_dir)
+        output_dir = os.path.abspath(args.output_dir)
+        if not os.path.isdir(input_dir):
+            raise FileNotFoundError(f"Input directory not found: {input_dir}")
+        os.makedirs(output_dir, exist_ok=True)
+
+        subdirs = sorted([d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))])
+        obj_list = []
+        for sub in subdirs:
+            obj_path = find_obj_in_dir(os.path.join(input_dir, sub))
+            if obj_path is not None:
+                obj_list.append((obj_path, sub))
+            else:
+                print(f"  Skipping {sub}: no .obj found")
+
+        if not obj_list:
+            raise FileNotFoundError(f"No .obj files found under {input_dir}")
+
+        print(f"Found {len(obj_list)} mesh(es) under {input_dir}")
+        print(f"Config: fine={N_SURFACE_FINE:,}  wide={N_SURFACE_WIDE:,}  "
+              f"uniform={N_UNIFORM:,}  sigma_fine={SIGMA_FINE}  "
+              f"sigma_wide={SIGMA_WIDE}  tau={TAU}")
+
+        for obj_path, model_id in obj_list:
+            out_path = os.path.join(output_dir, model_id)
+            compute_and_save(obj_path, out_path, rng)
+
+        verify = os.path.join(output_dir, f"{obj_list[0][1]}.npz")
+        if os.path.isfile(verify):
+            print(f"\n{'='*60}")
+            print(f"Verification: {os.path.basename(verify)}")
+            d = np.load(verify)
+            for k, v in d.items():
+                print(f"  {k:12s}: shape={v.shape}  dtype={v.dtype}  "
+                      f"range=[{v.min():.4f}, {v.max():.4f}]")
+        print("\nAll done.")
+        return
+
+    # Legacy: model_normalized_*.obj in script directory
     obj_files = sorted(
         glob.glob(os.path.join(SAMPLING_DIR, "model_normalized_*.obj"))
     )
     if not obj_files:
         raise FileNotFoundError(
-            f"No model_normalized_*.obj files found in {SAMPLING_DIR}"
+            f"No model_normalized_*.obj files found in {SAMPLING_DIR}. "
+            "Use --input-dir and --output-dir for ShapeNet-style directories."
         )
 
     print(f"Found {len(obj_files)} mesh(es).")

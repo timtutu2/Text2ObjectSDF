@@ -1,0 +1,24 @@
+# Git and IDE
+.git
+.gitignore
+.cursor
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.venv
+venv
+env
+
+# Data and outputs (mount these at runtime instead)
+data/
+checkpoints/
+runs/
+outputs/
+*.npz
+*.pth
+
+# Docs (optional to exclude)
+*.pdf
