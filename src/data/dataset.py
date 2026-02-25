@@ -5,12 +5,12 @@ from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 
 class Text2ObjectDataset(Dataset):
-    def __init__(self, processed_dir: str = "data/processed", captions_file: str = "data/raw/captions.json", num_points_per_batch: int = 4096):
+    def __init__(self, processed_dir: str = "data/processed", captions_file: str = "src/data/captions.json", num_points_per_batch: int = 4096):
         self.processed_dir = Path(processed_dir)
         self.num_points_per_batch = num_points_per_batch
 
-        # Load caption annotations: {model_id: [caption, ...]}
-        with open(captions_file, 'r', encoding='utf-8') as f:
+        # Load caption annotations: {model_id: [caption, ...]} (model_id matches .npz stem, e.g. ue639c33f-d415-458c-8ff8-2ef68135af15)
+        with open(captions_file, "r", encoding="utf-8") as f:
             self.captions_dict = json.load(f)
 
         # Build the dataset from the intersection of processed .npz files and captioned IDs.
