@@ -1,14 +1,21 @@
 import os
+import sys
 import yaml
 import torch
 from torch.utils.data import DataLoader
 from datetime import datetime
+from pathlib import Path
 
 try:
     import wandb
     _WANDB_AVAILABLE = True
 except ImportError:
     _WANDB_AVAILABLE = False
+
+# Ensure local repo root takes precedence over image-level PYTHONPATH entries (e.g. /app).
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.dataset import Text2ObjectDataset
 from src.models.network import Text2ObjectNetwork
@@ -19,8 +26,8 @@ def main():
     print(f"Using device: {device}")
 
     # Load configuration from YAML file
-    config_path = "configs/default.yaml"
-    if not os.path.exists(config_path):
+    config_path = PROJECT_ROOT / "configs" / "default.yaml"
+    if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
         
     with open(config_path, "r") as f:
@@ -33,7 +40,7 @@ def main():
     log_cfg = config.get('logging', {})
 
     # Create output directories
-    checkpoints_dir = "checkpoints"
+    checkpoints_dir = PROJECT_ROOT / "checkpoints"
     os.makedirs(checkpoints_dir, exist_ok=True)
 
     # TensorBoard: log_dir with timestamped run subdir
@@ -64,7 +71,7 @@ def main():
     dataset = Text2ObjectDataset(
         processed_dir1="/mnt/tim/data/ShapeNetCore/04379243_sdf", 
         processed_dir2="/mnt/tim/data/ShapeNetCore/03001627_sdf",
-        captions_file="src/data/captions.json",
+        captions_file=str(PROJECT_ROOT / "src" / "data" / "captions.json"),
         num_points_per_batch=train_cfg['points_per_batch']
     )
     dataloader = DataLoader(
@@ -172,7 +179,7 @@ def main():
 
         # Checkpointing
         if (epoch + 1) % train_cfg['save_interval'] == 0:
-            checkpoint_path = os.path.join(checkpoints_dir, f"model_epoch_{epoch+1}.pth")
+            checkpoint_path = checkpoints_dir / f"model_epoch_{epoch+1}.pth"
             
             checkpoint_state = {
                 'epoch': epoch + 1,
@@ -185,7 +192,7 @@ def main():
 
         scheduler.step()
 
-    final_model_path = os.path.join(checkpoints_dir, "model_final.pth")
+    final_model_path = checkpoints_dir / "model_final.pth"
     torch.save({
         'epoch': train_cfg['num_epochs'],
         'model_state_dict': sdf_decoder.state_dict(),

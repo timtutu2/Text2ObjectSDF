@@ -28,6 +28,7 @@ spec:
           fi && \
           pip install --no-cache-dir notebook jupyterlab debugpy ipdb gdown tqdm && \
           cd /mnt/tim/text2objectsdf && \
+          export PYTHONPATH=/mnt/tim/text2objectsdf:${PYTHONPATH} && \
           mkdir -p logs && \
           LOGFILE=logs/text2object_$(date +%Y%m%d_%H%M%S).log && \
           echo \"Saving logs to $LOGFILE\" && \
@@ -54,11 +55,11 @@ spec:
           name: dshm
         resources:
           limits:
-            nvidia.com/gpu: "4"
+            nvidia.com/gpu: "1"
             memory: "64G"
             cpu: "16"
           requests:
-            nvidia.com/gpu: "4"
+            nvidia.com/gpu: "1"
             memory: "64G"
             cpu: "16"
       restartPolicy: OnFailure  # Retry on failure, but not on success
@@ -133,6 +134,5 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 8Gi
-
 
 

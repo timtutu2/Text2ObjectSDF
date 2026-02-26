@@ -3,3 +3,4 @@
 /sampling/model_normalized_*.obj
 /sampling/sdf_data_*.npz
 /.cursor
+src/models/__pycache__
