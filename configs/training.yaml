@@ -1,0 +1,138 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: textsdf-training-job
+spec:
+  backoffLimit: 2  # Retry up to 2 times if the job fails
+  ttlSecondsAfterFinished: 86400  # Auto-delete job after 24 hours of completion
+  template:
+    metadata:
+      labels:
+        app: textsdf-training-job
+    spec:
+      containers:
+      - name: gpu-container
+        image: timttu/text2objectsdf:v2
+        command: ["/bin/bash", "-c"]
+        args: [
+          "set -e && \
+          git config --global credential.helper store && \
+          echo \"https://oauth2:${GIT_ACCESS_TOKEN}@github.com\" > ~/.git-credentials && \
+          cd /mnt/tim && \
+          if [ ! -d text2objectsdf ]; then \
+            echo 'Cloning repository...' && \
+            git clone https://github.com/timtutu2/Text2ObjectSDF.git text2objectsdf ; \
+          else \
+            echo 'Repository exists, pulling latest changes...' && \
+            cd text2objectsdf && git pull ; \
+          fi && \
+          pip install --no-cache-dir notebook jupyterlab debugpy ipdb gdown tqdm && \
+          cd /mnt/tim/text2objectsdf && \
+          mkdir -p logs && \
+          LOGFILE=logs/text2object_$(date +%Y%m%d_%H%M%S).log && \
+          echo \"Saving logs to $LOGFILE\" && \
+          python3 scripts/train.py 2>&1 | tee $LOGFILE && \
+          echo \"Training completed. Logs saved to $LOGFILE\""
+        ]
+        env:
+        - name: AUTO_MODE
+          value: "true"
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wandb-tim-secret 
+              key: api_key
+        - name: GIT_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github--token
+              key: GIT_ACCESS_TOKEN
+        volumeMounts:
+        - mountPath: /mnt
+          name: erl-ucsd
+        - mountPath: /dev/shm
+          name: dshm
+        resources:
+          limits:
+            nvidia.com/gpu: "4"
+            memory: "64G"
+            cpu: "16"
+          requests:
+            nvidia.com/gpu: "4"
+            memory: "64G"
+            cpu: "16"
+      restartPolicy: OnFailure  # Retry on failure, but not on success
+      affinity:
+        nodeAffinity:
+          # Hard requirement: exclude known broken nodes
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - "k8s-haosu-04.sdsc.optiputer.net"
+                - "ry-gpu-14.sdsc.optiputer.net"
+          # Prefer nodes with good network for faster docker image pulls
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - "ry-gpu-01.sdsc.optiputer.net"
+                - "ry-gpu-02.sdsc.optiputer.net"
+                - "ry-gpu-03.sdsc.optiputer.net"
+                - "ry-gpu-04.sdsc.optiputer.net"
+                - "ry-gpu-05.sdsc.optiputer.net"
+                - "ry-gpu-06.sdsc.optiputer.net"
+                - "ry-gpu-07.sdsc.optiputer.net"
+                - "ry-gpu-08.sdsc.optiputer.net"
+                - "ry-gpu-09.sdsc.optiputer.net"
+                - "ry-gpu-10.sdsc.optiputer.net"
+                - "ry-gpu-11.sdsc.optiputer.net"
+                - "ry-gpu-12.sdsc.optiputer.net"
+                - "ry-gpu-13.sdsc.optiputer.net"
+                - "ry-gpu-15.sdsc.optiputer.net"
+                - "ry-gpu-16.sdsc.optiputer.net"
+                - "k8s-4090-01.calit2.optiputer.net"
+                - "k8s-4090-02.calit2.optiputer.net"
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - "k8s-haosu-02.sdsc.optiputer.net"
+                - "k8s-haosu-03.sdsc.optiputer.net"
+                - "k8s-haosu-05.sdsc.optiputer.net"
+                - "k8s-haosu-06.sdsc.optiputer.net"
+                - "k8s-haosu-07.sdsc.optiputer.net"
+                - "k8s-haosu-08.sdsc.optiputer.net"
+                - "k8s-haosu-09.sdsc.optiputer.net"
+                - "k8s-haosu-10.sdsc.optiputer.net"
+                - "k8s-haosu-11.sdsc.optiputer.net"
+                - "k8s-haosu-12.sdsc.optiputer.net"
+                - "k8s-haosu-13.sdsc.optiputer.net"
+                - "k8s-haosu-14.sdsc.optiputer.net"
+                - "k8s-haosu-15.sdsc.optiputer.net"
+                - "k8s-haosu-16.sdsc.optiputer.net"
+                - "k8s-haosu-17.sdsc.optiputer.net"
+                - "k8s-haosu-18.sdsc.optiputer.net"
+                - "k8s-haosu-19.sdsc.optiputer.net"
+                - "k8s-haosu-20.sdsc.optiputer.net"
+                - "k8s-haosu-21.sdsc.optiputer.net"
+                - "k8s-haosu-22.sdsc.optiputer.net"
+                - "k8s-haosu-23.sdsc.optiputer.net"
+      volumes:
+        - name: erl-ucsd
+          persistentVolumeClaim:
+            claimName: erl-ucsd
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+
+
+

@@ -2,6 +2,12 @@
 
 experiment_name: "text2object_baseline"
 
+# Logging (TensorBoard + optional Weights & Biases)
+logging:
+  log_dir: "/mnt/tim/text2objectsdf/logs"   # TensorBoard and run subdirs
+  wandb_project: "text2object-sdf"
+  wandb_enabled: true   # Set WANDB_API_KEY in env (e.g. K8s secret) to log to wandb
+
 # 1. Network Architecture
 model:
   text_embed_dim: 512       # CLIP ViT-B/32 output dimension.

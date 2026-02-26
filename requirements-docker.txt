@@ -10,6 +10,7 @@ pysdf
 # Training & inference (scripts, src)
 PyYAML
 tensorboard
+wandb
 tqdm
 PyMCubes
 # tinycudann: installed from GitHub in Dockerfile (not on PyPI)

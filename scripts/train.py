@@ -2,8 +2,13 @@ import os
 import yaml
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
+
+try:
+    import wandb
+    _WANDB_AVAILABLE = True
+except ImportError:
+    _WANDB_AVAILABLE = False
 
 from src.data.dataset import Text2ObjectDataset
 from src.models.network import Text2ObjectNetwork
@@ -25,15 +30,40 @@ def main():
     train_cfg = config['training']
     model_cfg = config['model']
     loss_cfg = config['loss']
+    log_cfg = config.get('logging', {})
 
     # Create output directories
     checkpoints_dir = "checkpoints"
     os.makedirs(checkpoints_dir, exist_ok=True)
 
+    # TensorBoard: log_dir with timestamped run subdir
+    log_dir = log_cfg.get('log_dir', '/mnt/tim/text2objectsdf/logs')
+    run_name = f"{config.get('experiment_name', 'text2object')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    tb_log_dir = os.path.join(log_dir, run_name)
+    os.makedirs(tb_log_dir, exist_ok=True)
+    print(f"TensorBoard logs: {tb_log_dir}")
+
+    # Weights & Biases (optional; uses WANDB_API_KEY from env, e.g. K8s secret)
+    use_wandb = log_cfg.get('wandb_enabled', False) and _WANDB_AVAILABLE
+    if use_wandb:
+        wandb.init(
+            project=log_cfg.get('wandb_project', 'text2object-sdf'),
+            name=run_name,
+            config={
+                'experiment_name': config.get('experiment_name'),
+                'training': train_cfg,
+                'model': model_cfg,
+                'loss': loss_cfg,
+            },
+        )
+        print("Weights & Biases logging enabled.")
+    elif log_cfg.get('wandb_enabled', False) and not _WANDB_AVAILABLE:
+        print("wandb_enabled is true but 'wandb' not installed; skipping W&B. pip install wandb")
+
     # Initialize dataset and dataloader
     dataset = Text2ObjectDataset(
-        processed_dir1="data/processed/04379243_sdf", 
-        processed_dir2="data/processed/03001627_sdf",
+        processed_dir1="/mnt/tim/data/ShapeNetCore/04379243_sdf", 
+        processed_dir2="/mnt/tim/data/ShapeNetCore/03001627_sdf",
         captions_file="src/data/captions.json",
         num_points_per_batch=train_cfg['points_per_batch']
     )
@@ -125,13 +155,16 @@ def main():
 
             optimizer.step()
 
-            # TensorBoard logging
-            writer.add_scalar('Loss/Total', loss.item(), global_step)
-            writer.add_scalar('Loss/SDF', loss_dict['loss_sdf'], global_step)
-            writer.add_scalar('Loss/VQ', loss_dict['loss_vq'], global_step)
-            writer.add_scalar('Loss/Eikonal', loss_dict['loss_eik'], global_step)
-            writer.add_scalar('LR', scheduler.get_last_lr()[0], global_step)
-            
+            # Weights & Biases (same metrics)
+            if use_wandb:
+                wandb.log({
+                    'Loss/Total': loss.item(),
+                    'Loss/SDF': loss_dict['loss_sdf'],
+                    'Loss/VQ': loss_dict['loss_vq'],
+                    'Loss/Eikonal': loss_dict['loss_eik'],
+                    'LR': scheduler.get_last_lr()[0],
+                }, step=global_step)
+
             if global_step % 50 == 0:
                 print(f"Epoch [{epoch+1}/{train_cfg['num_epochs']}] Step [{global_step}]: Total Loss: {loss.item():.4f}")
             
@@ -161,7 +194,8 @@ def main():
     }, final_model_path)
     print(f"Training finished! Final model saved to: {final_model_path}")
 
-    writer.close()
+    if use_wandb:
+        wandb.finish()
 
 if __name__ == "__main__":
     main()

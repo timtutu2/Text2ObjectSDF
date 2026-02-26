@@ -2,3 +2,5 @@ numpy
 trimesh
 rtree
 pysdf
+tensorboard
+wandb
