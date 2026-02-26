@@ -5,8 +5,10 @@ from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 
 class Text2ObjectDataset(Dataset):
-    def __init__(self, processed_dir: str = "data/processed", captions_file: str = "src/data/captions.json", num_points_per_batch: int = 4096):
-        self.processed_dir = Path(processed_dir)
+    def __init__(self, processed_dir1: str = "data/processed", processed_dir2: str = "data/processed", captions_file: str = "src/data/captions.json", num_points_per_batch: int = 4096):
+        self.processed_dir1 = Path(processed_dir1)
+        self.processed_dir2 = Path(processed_dir2)
+
         self.num_points_per_batch = num_points_per_batch
 
         # Load caption annotations: {model_id: [caption, ...]} (model_id matches .npz stem, e.g. ue639c33f-d415-458c-8ff8-2ef68135af15)
@@ -14,10 +16,14 @@ class Text2ObjectDataset(Dataset):
             self.captions_dict = json.load(f)
 
         # Build the dataset from the intersection of processed .npz files and captioned IDs.
-        all_npz = {f.stem: f for f in self.processed_dir.glob("*.npz")}
+        all_npz = {f.stem: f for f in self.processed_dir1.glob("*.npz")}
+        all_npz.update({f.stem: f for f in self.processed_dir2.glob("*.npz")})
+        
         captioned_ids = set(self.captions_dict.keys())
+        npz_ids = set(all_npz.keys())
 
-        valid_ids = sorted(captioned_ids & all_npz.keys())
+        # Preserve caption-dict order; only include IDs that have a .npz file.
+        valid_ids = [mid for mid in self.captions_dict.keys() if mid in npz_ids]
 
         missing_captions = sorted(all_npz.keys() - captioned_ids)
         missing_npz = sorted(captioned_ids - all_npz.keys())

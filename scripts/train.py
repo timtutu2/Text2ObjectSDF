@@ -29,18 +29,21 @@ def main():
     # Create output directories
     checkpoints_dir = "checkpoints"
     os.makedirs(checkpoints_dir, exist_ok=True)
-    
-    current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-    log_dir = os.path.join('runs', f"{config.get('experiment_name', 'Text2ObjectSDF')}_{current_time}")
-    writer = SummaryWriter(log_dir=log_dir)
 
     # Initialize dataset and dataloader
     dataset = Text2ObjectDataset(
-        processed_dir="data/processed", 
-        captions_file="data/raw/captions.json",
+        processed_dir1="data/processed/04379243_sdf", 
+        processed_dir2="data/processed/03001627_sdf",
+        captions_file="src/data/captions.json",
         num_points_per_batch=train_cfg['points_per_batch']
     )
-    dataloader = DataLoader(dataset, batch_size=train_cfg['batch_size'], shuffle=True, drop_last=True)
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=train_cfg['batch_size'], 
+        shuffle=True, 
+        drop_last=True,
+        num_workers=train_cfg['num_workers']
+    )
 
     # Initialize network and loss function
     print("Loading Core Network (Text2ObjectNetwork)...")

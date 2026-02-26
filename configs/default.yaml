@@ -19,7 +19,8 @@ model:
 
 # 2. Training Hyperparameters
 training:
-  batch_size: 4
+  batch_size: 64
+  num_workers: 8
   num_epochs: 800
   learning_rate: 0.0005
   points_per_batch: 8192
