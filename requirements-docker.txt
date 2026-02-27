@@ -1,5 +1,6 @@
 # Text2ObjectSDF - full dependencies for Docker
-# Base image provides: torch (CUDA), Python 3.10
+# Base image provides: torch (CUDA), Python 3.10.
+# Keep torch pinned so non-base environments still install a compatible version.
 
 # From requirements.txt
 numpy
@@ -17,3 +18,4 @@ PyMCubes
 transformers
 scipy
 scikit-image
+torch==2.2.0

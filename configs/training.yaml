@@ -65,7 +65,9 @@ spec:
       restartPolicy: OnFailure  # Retry on failure, but not on success
       affinity:
         nodeAffinity:
-          # Hard requirement: exclude known broken nodes
+          # Hard requirements:
+          # 1) exclude known broken nodes
+          # 2) force scheduling on RTX 3090-class or better GPUs so tinycudann is compatible
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
@@ -74,6 +76,18 @@ spec:
                 values:
                 - "k8s-haosu-04.sdsc.optiputer.net"
                 - "ry-gpu-14.sdsc.optiputer.net"
+              - key: nvidia.com/gpu.product
+                operator: In
+                values:
+                - "NVIDIA-GeForce-RTX-3090"
+                - "NVIDIA-GeForce-RTX-3090-Ti"
+                - "NVIDIA-GeForce-RTX-4080"
+                - "NVIDIA-GeForce-RTX-4090"
+                - "NVIDIA-RTX-A5000"
+                - "NVIDIA-RTX-A6000"
+                - "NVIDIA-A100-PCIE-40GB"
+                - "NVIDIA-A100-80GB-PCIe"
+                - "NVIDIA-A100-SXM4-80GB"
           # Prefer nodes with good network for faster docker image pulls
           preferredDuringSchedulingIgnoredDuringExecution:
           - weight: 100
@@ -97,6 +111,7 @@ spec:
                 - "ry-gpu-13.sdsc.optiputer.net"
                 - "ry-gpu-15.sdsc.optiputer.net"
                 - "ry-gpu-16.sdsc.optiputer.net"
+                - "k8s-3090-01.calit2.optiputer.net"
                 - "k8s-4090-01.calit2.optiputer.net"
                 - "k8s-4090-02.calit2.optiputer.net"
           - weight: 50
@@ -134,5 +149,3 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 8Gi
-
-

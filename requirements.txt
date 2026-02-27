@@ -2,5 +2,13 @@ numpy
 trimesh
 rtree
 pysdf
+PyYAML
 tensorboard
 wandb
+tqdm
+PyMCubes
+transformers
+scipy
+scikit-image
+# Needed by CLIPTextModel (transformers backend) and all model/training modules.
+torch==2.2.0
