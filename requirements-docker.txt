@@ -15,7 +15,7 @@ wandb
 tqdm
 PyMCubes
 # tinycudann: installed from GitHub in Dockerfile (not on PyPI)
-transformers
+transformers>=4.30,<5.0
 scipy
 scikit-image
 torch==2.2.0

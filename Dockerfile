@@ -28,8 +28,10 @@ COPY requirements-docker.txt requirements-docker.txt
 
 # tinycudann is not on PyPI; build from source. No GPU at build time, so we must set
 # target architectures explicitly (see https://developer.nvidia.com/cuda-gpus).
-# 75=Turing, 80=A100, 86=RTX30/Ampere, 89=RTX40/Ada. Override: docker build --build-arg TCNN_CUDA_ARCHITECTURES=86 .
-ARG TCNN_CUDA_ARCHITECTURES=75;80;86;89
+# 61=Pascal, 75=Turing, 80=A100, 86=RTX30/Ampere, 89=RTX40/Ada.
+# Override example:
+#   docker build --build-arg TCNN_CUDA_ARCHITECTURES="61;75;80;86;89" .
+ARG TCNN_CUDA_ARCHITECTURES=61;75;80;86;89
 ENV TCNN_CUDA_ARCHITECTURES=${TCNN_CUDA_ARCHITECTURES}
 RUN pip install --no-cache-dir "git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch"
 

@@ -7,7 +7,7 @@ tensorboard
 wandb
 tqdm
 PyMCubes
-transformers
+transformers>=4.30,<5.0
 scipy
 scikit-image
 # Needed by CLIPTextModel (transformers backend) and all model/training modules.

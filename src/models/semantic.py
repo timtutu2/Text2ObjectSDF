@@ -11,7 +11,8 @@ class SemanticEncoder(nn.Module):
         super().__init__()
         # Load tokenizer and pretrained CLIP text model.
         self.tokenizer = CLIPTokenizer.from_pretrained(model_name)
-        self.clip_model = CLIPTextModel.from_pretrained(model_name)
+        # use_safetensors=True avoids torch.load and the transformers requirement for torch>=2.6 (CVE-2025-32434)
+        self.clip_model = CLIPTextModel.from_pretrained(model_name, use_safetensors=True)
 
         # Freeze CLIP weights — not fine-tuned.
         for param in self.clip_model.parameters():
