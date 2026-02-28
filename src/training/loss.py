@@ -72,7 +72,12 @@ class Text2ObjectLoss(nn.Module):
             only_inputs=True
         )[0]
 
-        # (||grad|| - 1)^2. Clamp grad_norm to avoid fp16 overflow and NaNs in backward.
+        # Sanitize raw gradients before norm: fp16 autocast can produce Inf/NaN in
+        # higher-order gradient computations (create_graph=True), which propagates to
+        # the loss value and makes loss_finite differ across DDP ranks → NCCL deadlock.
+        gradients = torch.nan_to_num(gradients, nan=0.0, posinf=10.0, neginf=-10.0)
+
+        # (||grad|| - 1)^2. Clamp grad_norm to avoid residual fp16 overflow.
         grad_norm = gradients.norm(2, dim=-1)
         grad_norm = torch.clamp(grad_norm, 0.0, 10.0)
         eikonal_loss = F.mse_loss(grad_norm, torch.ones_like(grad_norm))

@@ -32,7 +32,7 @@ spec:
           mkdir -p logs && \
           LOGFILE=logs/text2object_$(date +%Y%m%d_%H%M%S).log && \
           echo \"Saving logs to $LOGFILE\" && \
-          torchrun --standalone --nnodes=1 --nproc_per_node=4 scripts/train_backup.py \
+          torchrun --standalone --nnodes=1 --nproc_per_node=4 scripts/train.py \
             --config configs/default.yaml \
             --batch-size 2 \
             --points-per-batch 4096 \

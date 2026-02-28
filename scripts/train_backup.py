@@ -195,6 +195,12 @@ def main():
         hashgrid=model_cfg.get('hashgrid'),
     ).to(device)
 
+    # DDP can hang/slow when output_layer (1, 256) grad has strides (1,1) vs bucket (256,1).
+    # Force contiguous grad as soon as it is computed so all-reduce is fast.
+    def _make_grad_contiguous(grad):
+        return grad.contiguous() if grad is not None else None
+    sdf_decoder.output_layer.weight.register_hook(_make_grad_contiguous)
+
     if use_distributed:
         sdf_decoder = torch.nn.parallel.DistributedDataParallel(
             sdf_decoder,
@@ -256,6 +262,8 @@ def main():
             f"Per-GPU Batch Size: {train_cfg['batch_size']}, "
             f"Grad Accum: {grad_accum_steps}, AMP: {amp_enabled}"
         )
+        if use_distributed:
+            print("Note: First backward (Eikonal + DDP sync) can take 1–3 min; later steps are faster.")
     global_step = 0
     accumulated_finite = False  # True if at least one batch in current accum had finite loss
 
@@ -299,6 +307,12 @@ def main():
                 if not accumulated_finite:
                     optimizer.zero_grad(set_to_none=True)
                 else:
+                    # Make grads contiguous so DDP all-reduce doesn't hang/slow on stride mismatch
+                    # (e.g. output_layer weight (1, 256) can produce non-contiguous grad)
+                    for p in sdf_decoder.parameters():
+                        if p.grad is not None and not p.grad.is_contiguous():
+                            p.grad = p.grad.contiguous()
+
                     if amp_enabled:
                         scaler.unscale_(optimizer)
 
