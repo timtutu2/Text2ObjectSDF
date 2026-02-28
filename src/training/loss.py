@@ -18,6 +18,7 @@ class Text2ObjectLoss(nn.Module):
     def compute_sdf_loss(self, sdf_pred, sdf_gt):
         """
         Surface-weighted truncated SDF loss.
+        Clamps sdf_pred to avoid NaNs from unstable model outputs (e.g. early training, AMP).
 
         Points near the zero-crossing define the mesh surface and account for
         only ~3% of samples, but are the only region where the sign changes.
@@ -28,8 +29,10 @@ class Text2ObjectLoss(nn.Module):
           - |sdf_gt| < tau/2  (near-surface): weight = 10.0
           - otherwise (far field):             weight = 1.0
         """
-        pred_clamped = torch.clamp(sdf_pred, -self.tau, self.tau)
-        gt_clamped   = torch.clamp(sdf_gt,   -self.tau, self.tau)
+        # Replace NaN/Inf from unstable forward (AMP, bad init) so loss stays finite
+        sdf_pred_safe = torch.nan_to_num(sdf_pred, nan=0.0, posinf=self.tau, neginf=-self.tau)
+        pred_clamped = torch.clamp(sdf_pred_safe, -self.tau, self.tau)
+        gt_clamped   = torch.clamp(sdf_gt,        -self.tau, self.tau)
 
         # Per-point Huber loss (reduction='none' so we can apply weights).
         per_point_loss = F.smooth_l1_loss(pred_clamped, gt_clamped, reduction='none')
@@ -37,7 +40,7 @@ class Text2ObjectLoss(nn.Module):
         # Up-weight the near-surface band (|sdf_gt| < tau/2).
         near_surface_mask = (torch.abs(gt_clamped) < (self.tau * 0.5)).float()
         inside_mask = (sdf_gt > 0).float()
-        wrong_sign_mask = ((sdf_gt > 0) & (sdf_pred < 0)).float()
+        wrong_sign_mask = ((sdf_gt > 0) & (pred_clamped < 0)).float()
         weights = 1.0 + (15.0 * near_surface_mask) + (25.0 * inside_mask) + (20.0 * wrong_sign_mask)
 
         loss_sdf = (weights * per_point_loss).mean()
@@ -69,8 +72,9 @@ class Text2ObjectLoss(nn.Module):
             only_inputs=True
         )[0]
 
-        # (||grad|| - 1)^2
+        # (||grad|| - 1)^2. Clamp grad_norm to avoid fp16 overflow and NaNs in backward.
         grad_norm = gradients.norm(2, dim=-1)
+        grad_norm = torch.clamp(grad_norm, 0.0, 10.0)
         eikonal_loss = F.mse_loss(grad_norm, torch.ones_like(grad_norm))
         return eikonal_loss
 
@@ -78,9 +82,12 @@ class Text2ObjectLoss(nn.Module):
         """
         Total loss: L = L_sdf + L_vq + lambda_eik * L_eik.
         """
+        codebook_loss = torch.nan_to_num(codebook_loss, nan=0.0, posinf=1.0, neginf=0.0)
+        commitment_loss = torch.nan_to_num(commitment_loss, nan=0.0, posinf=1.0, neginf=0.0)
+        sdf_pred_safe = torch.nan_to_num(sdf_pred, nan=0.0, posinf=self.tau, neginf=-self.tau)
         l_sdf = self.compute_sdf_loss(sdf_pred, sdf_gt)
         l_vq  = self.compute_vq_loss(codebook_loss, commitment_loss)
-        l_eik = self.compute_eikonal_loss(sdf_pred, points)
+        l_eik = self.compute_eikonal_loss(sdf_pred_safe, points)
 
         total_loss = l_sdf + l_vq + (self.lambda_eik * l_eik)
 

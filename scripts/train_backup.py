@@ -257,6 +257,7 @@ def main():
             f"Grad Accum: {grad_accum_steps}, AMP: {amp_enabled}"
         )
     global_step = 0
+    accumulated_finite = False  # True if at least one batch in current accum had finite loss
 
     for epoch in range(train_cfg['num_epochs']): 
         sdf_decoder.train()
@@ -277,33 +278,40 @@ def main():
             
             # Enable gradient tracking for Eikonal loss
             points.requires_grad_(True)
+            loss_finite = False
             with sync_context:
-                with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=torch.float16):
+                with torch.autocast(device_type="cuda", enabled=amp_enabled, dtype=torch.float16):
                     sdf_pred, codebook_loss, commitment_loss = sdf_decoder(points, prompts, s_gt=sdf_gt)
 
                     # Loss computation & backpropagation
                     loss, loss_dict = criterion(sdf_pred, sdf_gt, codebook_loss, commitment_loss, points)
 
-                scaled_loss = loss / grad_accum_steps
-                if amp_enabled:
-                    scaler.scale(scaled_loss).backward()
-                else:
-                    scaled_loss.backward()
+                loss_finite = torch.isfinite(loss).all().item()
+                if loss_finite:
+                    accumulated_finite = True
+                    scaled_loss = loss / grad_accum_steps
+                    if amp_enabled:
+                        scaler.scale(scaled_loss).backward()
+                    else:
+                        scaled_loss.backward()
 
             if is_update_step:
-                if amp_enabled:
-                    scaler.unscale_(optimizer)
-
-                # Gradient clipping: prevents exploding gradients during early training
-                # when the newly-corrected output_layer init produces larger gradient magnitudes.
-                torch.nn.utils.clip_grad_norm_(sdf_decoder.parameters(), max_norm=1.0)
-
-                if amp_enabled:
-                    scaler.step(optimizer)
-                    scaler.update()
+                if not accumulated_finite:
+                    optimizer.zero_grad(set_to_none=True)
                 else:
-                    optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
+                    if amp_enabled:
+                        scaler.unscale_(optimizer)
+
+                    # Gradient clipping: prevents exploding gradients during early training
+                    torch.nn.utils.clip_grad_norm_(sdf_decoder.parameters(), max_norm=1.0)
+
+                    if amp_enabled:
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:
+                        optimizer.step()
+                    optimizer.zero_grad(set_to_none=True)
+                accumulated_finite = False
 
                 reduced_total = reduce_mean(loss.detach(), world_size, use_distributed)
                 reduced_sdf = reduce_mean(torch.tensor(loss_dict['loss_sdf'], device=device), world_size, use_distributed)
@@ -320,11 +328,19 @@ def main():
                         'LR': scheduler.get_last_lr()[0],
                     }, step=global_step)
 
-                if is_main_process and global_step % 50 == 0:
-                    print(
-                        f"Epoch [{epoch+1}/{train_cfg['num_epochs']}] "
-                        f"Step [{global_step}]: Total Loss: {reduced_total.item():.4f}"
-                    )
+                total_val = reduced_total.item()
+                if is_main_process:
+                    if not (total_val == total_val):  # NaN check
+                        print(
+                            f"[WARNING] NaN loss at step {global_step}. "
+                            f"SDF={loss_dict['loss_sdf']} VQ={loss_dict['loss_vq']} Eik={loss_dict['loss_eik']}. "
+                            "Try --no-amp to rule out fp16 overflow."
+                        )
+                    elif global_step % 50 == 0:
+                        print(
+                            f"Epoch [{epoch+1}/{train_cfg['num_epochs']}] "
+                            f"Step [{global_step}]: Total Loss: {total_val:.4f}"
+                        )
 
                 global_step += 1
 
