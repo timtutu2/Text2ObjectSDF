@@ -20,7 +20,14 @@ class SemanticEncoder(nn.Module):
             
     def forward(self, prompts, device):
         # Tokenize and encode the text prompts.
-        text_inputs = self.tokenizer(prompts, padding=True, return_tensors="pt").to(device)
+        # CLIP has max_position_embeddings=77; truncate long captions to avoid indexing errors
+        text_inputs = self.tokenizer(
+            prompts,
+            padding=True,
+            truncation=True,
+            max_length=77,
+            return_tensors="pt",
+        ).to(device)
         with torch.no_grad():
             outputs = self.clip_model(**text_inputs)
         return outputs.pooler_output.float() # (Batch, 512)
