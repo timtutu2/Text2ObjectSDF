@@ -1,5 +1,6 @@
 import os
 import sys
+import math
 import argparse
 import yaml
 import torch
@@ -194,6 +195,7 @@ def main():
             sdf_decoder,
             device_ids=[local_rank],
             output_device=local_rank,
+            gradient_as_bucket_view=True,
         )
     model_without_ddp = sdf_decoder.module if use_distributed else sdf_decoder
 
@@ -209,39 +211,32 @@ def main():
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     grad_accum_steps = train_cfg.get("grad_accum_steps", 1)
 
-    # Warmup → Stable → Decay (WSD) schedule.
+    # Warmup → Stable → Decay (WSD) schedule implemented as a single LambdaLR.
+    # Using LambdaLR avoids SequentialLR's internal step() calls during __init__,
+    # which otherwise trigger a spurious "step() before optimizer.step()" warning.
     # Phase 1 – Warmup  (warmup_epochs):  LR ramps linearly from lr*1e-4 → lr.
-    #   Prevents exploding gradients before the HashGrid features initialise.
     # Phase 2 – Stable  (stable_epochs):  LR stays constant at lr.
-    #   Lets the model converge at full learning capacity.
     # Phase 3 – Decay   (remaining):      LR decays via cosine from lr → eta_min.
-    #   Smoothly anneals into the final optimum without overshooting.
     warmup_epochs = train_cfg.get('warmup_epochs', 50)
     stable_epochs = train_cfg.get('stable_epochs', 600)
     decay_epochs  = max(train_cfg['num_epochs'] - warmup_epochs - stable_epochs, 1)
+    base_lr       = train_cfg['learning_rate']
+    eta_min       = 1e-6
 
     if is_main_process:
         print(f"LR schedule — Warmup: {warmup_epochs} | Stable: {stable_epochs} | Decay: {decay_epochs} epochs")
 
-    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-        optimizer,
-        start_factor=1e-4,
-        end_factor=1.0,
-        total_iters=warmup_epochs
-    )
-    stable_scheduler = torch.optim.lr_scheduler.ConstantLR(
-        optimizer,
-        factor=1.0,
-        total_iters=stable_epochs
-    )
-    decay_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=decay_epochs, eta_min=1e-6
-    )
-    scheduler = torch.optim.lr_scheduler.SequentialLR(
-        optimizer,
-        schedulers=[warmup_scheduler, stable_scheduler, decay_scheduler],
-        milestones=[warmup_epochs, warmup_epochs + stable_epochs]
-    )
+    def _wsd_lambda(epoch):
+        if epoch < warmup_epochs:
+            return 1e-4 + (1.0 - 1e-4) * epoch / max(warmup_epochs, 1)
+        elif epoch < warmup_epochs + stable_epochs:
+            return 1.0
+        else:
+            progress = (epoch - warmup_epochs - stable_epochs) / decay_epochs
+            cosine   = 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
+            return eta_min / base_lr + (1.0 - eta_min / base_lr) * cosine
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_wsd_lambda)
 
     if is_main_process:
         print(
