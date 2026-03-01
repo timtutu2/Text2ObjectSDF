@@ -37,7 +37,7 @@ spec:
             --points-per-batch 4096 \
             --num-workers 2 \
             --grad-accum-steps 8 \
-            --amp 2>&1 | tee $LOGFILE && \
+            --no-amp 2>&1 | tee $LOGFILE && \
           echo \"Training completed. Logs saved to $LOGFILE\""
         ]
         env:

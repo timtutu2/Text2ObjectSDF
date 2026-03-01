@@ -53,7 +53,10 @@ class Text2ObjectDataset(Dataset):
         # 1) Load spatial coordinates and ground-truth SDF values.
         data = np.load(file_path)
         points = data['points']  # (N, 3)
-        sdf = data['sdf']        # (N,)
+        sdf = data['sdf']    
+        sdf_key = 'sdf_clamp' if 'sdf_clamp' in data else 'sdf'
+        sdf = data[sdf_key]
+        points = np.clip(points, 0.0, 1.0)
 
         # 2) Randomly subsample points to control per-object batch size.
         total_points = points.shape[0]
