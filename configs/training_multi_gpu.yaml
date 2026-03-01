@@ -34,7 +34,6 @@ spec:
           echo \"Saving logs to $LOGFILE\" && \
           torchrun --standalone --nnodes=1 --nproc_per_node=4 scripts/train.py \
             --config configs/default.yaml \
-            --batch-size 2 \
             --points-per-batch 4096 \
             --num-workers 2 \
             --grad-accum-steps 8 \
