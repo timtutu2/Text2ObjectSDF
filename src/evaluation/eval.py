@@ -5,15 +5,14 @@ import yaml
 import torch
 from pathlib import Path
 
-from src.models.network import Text2ObjectNetwork
-from src.utils.meshing import generate_mesh_from_model
-import re
-
-
 # Ensure project root is on PYTHONPATH so `src.*` imports work
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.models.network import Text2ObjectNetwork
+from src.utils.meshing import generate_mesh_from_model
+import re
 
 
 def sanitize_filename(text: str) -> str:
@@ -90,7 +89,7 @@ def main():
         hashgrid=model_cfg.get("hashgrid"),
     ).to(device)
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device ,weights_only=True)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     model.load_state_dict(state_dict)
     model.eval()

@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
   - name: gpu-container
-    image: timttu/text2objectsdf:latest
+    image: timttu/text2objectsdf:v5
     command: ["/bin/bash", "-c"]
     args: [
       "set -e && \
