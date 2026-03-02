@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from .spatial import SpatialEncoder
-from .semantic import SemanticEncoder, ShapeVQEncoder
+from .semantic import SemanticEncoder, ShapeVQEncoder, TextPrior
 from .film import FiLMLayer
 
 class Text2ObjectNetwork(nn.Module):
@@ -24,9 +24,13 @@ class Text2ObjectNetwork(nn.Module):
         )
         spatial_dim = self.spatial_encoder.output_dim
 
-        # Semantic and latent control branches (CLIP + VQ-VAE).
+        # Semantic and latent control branches (CLIP + VQ-VAE + text prior).
         self.semantic_encoder = SemanticEncoder()
         self.vq_encoder = ShapeVQEncoder(text_embed_dim, latent_dim, num_embeddings=num_embeddings)
+        # Text-conditioned prior: maps CLIP text feature → VQ latent space.
+        # Supervised at training time to predict the PointNet encoder's z_q output,
+        # enabling text-only inference without GT SDF observations.
+        self.text_prior = TextPrior(text_embed_dim, latent_dim)
 
         # --- 2. FiLM decoder initialization ---
         self.condition_dim = text_embed_dim + latent_dim
@@ -53,12 +57,13 @@ class Text2ObjectNetwork(nn.Module):
         x:       3D query coordinates (Batch, N, 3)
         prompts: text descriptions List[str]
         s_gt:    ground-truth SDF (Batch, N); provide during training, None at inference.
-        z:       pre-sampled latent code (Batch, latent_dim) for chunked inference.
-                 If supplied, the VQ encoder is skipped entirely.
+        z:       pre-computed latent code (Batch, latent_dim) for chunked inference.
+                 If supplied, skips both the VQ encoder and the text prior.
 
-        Returns:
-          Training:  sdf_pred, codebook_loss, commitment_loss
-          Inference: sdf_pred, 0.0, 0.0
+        Returns (training):  sdf_pred, codebook_loss, commitment_loss, z_prior, z_q_target
+        Returns (inference): sdf_pred, 0.0,           0.0,             None,    None
+          z_prior    — text_prior(e), used for prior loss supervision
+          z_q_target — stop-gradient VQ-encoder output, target for z_prior
         """
         device = x.device
         batch_size, n_points, _ = x.shape
@@ -66,21 +71,30 @@ class Text2ObjectNetwork(nn.Module):
         # 1. Semantic Flow: frozen CLIP text feature e.
         e = self.semantic_encoder(prompts, device)
 
-        # 2. Latent Flow: VQ-VAE encoder or pre-supplied z.
+        # 2. Latent Flow
         codebook_loss   = torch.tensor(0.0, device=device)
         commitment_loss = torch.tensor(0.0, device=device)
+        z_prior     = None
+        z_q_target  = None
 
         if s_gt is not None:
-            # Training: encode SDF observations through VQ bottleneck.
-            # x is detached so Eikonal gradient ∂ŝ/∂x never flows into PointNet.
+            # Training: encode shape observations through the PointNet → VQ bottleneck.
+            # x is detached so the Eikonal gradient ∂ŝ/∂x never flows into PointNet.
             z, z_e, codebook_loss, commitment_loss, _ = self.vq_encoder(
                 x.detach(), s_gt, e
             )
+            # Text prior predicts what z_q should be given only the text.
+            # z_q_target is the stop-gradient codebook entry — supervision target.
+            z_prior    = self.text_prior(e)
+            z_q_target = z.detach()  # z == z_q_st; .detach() gives the codebook values
+
         elif z is None:
-            # Inference (no pre-supplied z): sample a random codebook entry.
-            idx = torch.randint(0, self.vq_encoder.vq.num_embeddings,
-                                (batch_size,), device=device)
-            z = self.vq_encoder.vq.codebook(idx)   # (B, latent_dim)
+            # Inference: derive z entirely from the text via the learned prior.
+            # Quantize z_prior to the nearest codebook entry so the FiLM decoder
+            # receives an in-distribution latent (same space as during training).
+            z_prior = self.text_prior(e)
+            _, _, _, indices = self.vq_encoder.vq(z_prior)
+            z = self.vq_encoder.vq.codebook(indices)   # (B, latent_dim)
 
         # 3. Spatial Flow: multi-resolution HashGrid features.
         x_flat = x.view(-1, 3)
@@ -95,4 +109,4 @@ class Text2ObjectNetwork(nn.Module):
         # 5. Scalar SDF output.
         sdf_pred = self.output_layer(h).squeeze(-1)
 
-        return sdf_pred, codebook_loss, commitment_loss
+        return sdf_pred, codebook_loss, commitment_loss, z_prior, z_q_target

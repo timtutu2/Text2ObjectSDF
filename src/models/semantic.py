@@ -83,6 +83,36 @@ class VectorQuantizer(nn.Module):
         return z_q_st, codebook_loss, commitment_loss, indices
 
 
+class TextPrior(nn.Module):
+    """
+    Maps a CLIP text embedding directly to the VQ latent space.
+
+    During training this module is supervised with an MSE loss against the
+    PointNet VQ-encoder's discrete output (z_q), so it learns which codebook
+    region corresponds to a given text description.  At inference the PointNet
+    encoder is unavailable (no GT SDF), so this module provides z without any
+    random sampling — replacing the previous random-codebook-entry fallback.
+    """
+    def __init__(self, text_embed_dim=512, latent_dim=128):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(text_embed_dim, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Linear(256, latent_dim),
+        )
+
+    def forward(self, e):
+        """
+        e: (B, text_embed_dim) — frozen CLIP text feature
+        Returns z_prior: (B, latent_dim)
+        """
+        return self.mlp(e)
+
+
 class ShapeVQEncoder(nn.Module):
     """
     Shape encoder for the VQ-VAE latent branch.

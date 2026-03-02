@@ -41,7 +41,8 @@ loss:
   truncation_dist: 0.07      # SDF truncation distance (tau).
   lambda_codebook: 1.0      # Weight for VQ codebook loss (moves codebook → encoder).
   commitment_cost: 0.25     # Weight for commitment loss β (moves encoder → codebook).
-  lambda_eik: 0.01        # Eikonal regularization weight.
+  lambda_eik: 0.01          # Eikonal regularization weight.
+  lambda_prior: 1.0         # Weight for text-prior alignment loss (TextPrior → z_q MSE).
 
 # 4. Inference / Meshing
 inference:

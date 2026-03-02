@@ -5,15 +5,21 @@ import torch.nn.functional as F
 class Text2ObjectLoss(nn.Module):
     """
     Combined loss function for the VQ-VAE SDF network.
-    L = L_sdf + lambda_cb * L_codebook + lambda_cm * L_commitment + lambda_eik * L_eik
+    L = L_sdf + L_vq + lambda_eik * L_eik + lambda_prior * L_prior
+
+    L_prior supervises the TextPrior module: it minimises the MSE between the
+    text-conditioned prior z_prior and the PointNet VQ-encoder's quantised
+    output z_q (stop-gradient).  This closes the train/inference gap — the
+    model learns which codebook region maps to a given text description.
     """
     def __init__(self, truncation_dist=0.1, lambda_codebook=1.0,
-                 commitment_cost=0.25, lambda_eik=0.1):
+                 commitment_cost=0.25, lambda_eik=0.1, lambda_prior=1.0):
         super().__init__()
         self.tau              = truncation_dist
         self.lambda_codebook  = lambda_codebook   # weight for codebook loss
         self.commitment_cost  = commitment_cost   # weight for commitment loss (β in VQ-VAE)
         self.lambda_eik       = lambda_eik
+        self.lambda_prior     = lambda_prior      # weight for text-prior alignment loss
 
     def compute_sdf_loss(self, sdf_pred, sdf_gt):
         """
@@ -55,6 +61,18 @@ class Text2ObjectLoss(nn.Module):
         """
         return self.lambda_codebook * codebook_loss + self.commitment_cost * commitment_loss
 
+    def compute_prior_loss(self, z_prior, z_q_target):
+        """
+        Text-prior alignment loss.
+        Pushes the text-conditioned prior z_prior toward the PointNet VQ-encoder's
+        quantised output z_q_target (stop-gradient).  After training, the prior can
+        replace the PointNet encoder at inference time so that generation is driven
+        by text alone rather than random codebook sampling.
+
+        L_prior = MSE(z_prior, z_q_target.detach())
+        """
+        return F.mse_loss(z_prior, z_q_target)
+
     def compute_eikonal_loss(self, sdf_pred, points):
         """
         Eikonal regularization to enforce a valid SDF geometry. [cite: 170]
@@ -83,9 +101,13 @@ class Text2ObjectLoss(nn.Module):
         eikonal_loss = F.mse_loss(grad_norm, torch.ones_like(grad_norm))
         return eikonal_loss
 
-    def forward(self, sdf_pred, sdf_gt, codebook_loss, commitment_loss, points):
+    def forward(self, sdf_pred, sdf_gt, codebook_loss, commitment_loss, points,
+                z_prior=None, z_q_target=None):
         """
-        Total loss: L = L_sdf + L_vq + lambda_eik * L_eik.
+        Total loss: L = L_sdf + L_vq + lambda_eik * L_eik + lambda_prior * L_prior.
+
+        z_prior    — text_prior(e) prediction  (None at inference, skips L_prior)
+        z_q_target — stop-gradient VQ target   (None at inference)
         """
         codebook_loss = torch.nan_to_num(codebook_loss, nan=0.0, posinf=1.0, neginf=0.0)
         commitment_loss = torch.nan_to_num(commitment_loss, nan=0.0, posinf=1.0, neginf=0.0)
@@ -94,10 +116,15 @@ class Text2ObjectLoss(nn.Module):
         l_vq  = self.compute_vq_loss(codebook_loss, commitment_loss)
         l_eik = self.compute_eikonal_loss(sdf_pred_safe, points)
 
-        total_loss = l_sdf + l_vq + (self.lambda_eik * l_eik)
+        l_prior = torch.tensor(0.0, device=sdf_pred.device)
+        if z_prior is not None and z_q_target is not None:
+            l_prior = self.compute_prior_loss(z_prior, z_q_target)
+
+        total_loss = l_sdf + l_vq + (self.lambda_eik * l_eik) + (self.lambda_prior * l_prior)
 
         return total_loss, {
-            "loss_sdf": l_sdf.item(),
-            "loss_vq":  l_vq.item(),
-            "loss_eik": l_eik.item()
+            "loss_sdf":   l_sdf.item(),
+            "loss_vq":    l_vq.item(),
+            "loss_eik":   l_eik.item(),
+            "loss_prior": l_prior.item(),
         }

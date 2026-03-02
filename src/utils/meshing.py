@@ -17,23 +17,36 @@ def generate_mesh_from_model(model, prompt, device, resolution=128, chunk_size=1
     num_points = grid_points.shape[0]
     
     sdf_values = []
-    
-    random_idx = torch.randint(0, model.vq_encoder.vq.num_embeddings, (1,), device=device)
-    fixed_z = model.vq_encoder.vq.codebook(random_idx)
-    
+
+    # Derive z_cond and z_uncond from the text prior once, before the chunk loop.
+    # This replaces the previous random codebook sampling and ensures the latent
+    # code is actually conditioned on the user's prompt.
+    with torch.no_grad():
+        # Conditional: encode the user prompt and project through the text prior.
+        e_cond   = model.semantic_encoder(prompt, device)
+        z_prior_cond = model.text_prior(e_cond)
+        _, _, _, idx_cond = model.vq_encoder.vq(z_prior_cond)
+        z_cond   = model.vq_encoder.vq.codebook(idx_cond)          # (1, latent_dim)
+
+        # Unconditional: same pipeline with an empty string — used for CFG.
+        e_uncond = model.semantic_encoder([""], device)
+        z_prior_uncond = model.text_prior(e_uncond)
+        _, _, _, idx_uncond = model.vq_encoder.vq(z_prior_uncond)
+        z_uncond = model.vq_encoder.vq.codebook(idx_uncond)        # (1, latent_dim)
+
     print("Evaluating SDF field (Chunking with CFG)...")
     with torch.no_grad():
         for i in tqdm(range(0, num_points, chunk_size)):
-            chunk = grid_points[i:i+chunk_size].unsqueeze(0) 
-            
+            chunk = grid_points[i:i+chunk_size].unsqueeze(0)
+
             # 1. Conditional prediction (with user prompt)
-            sdf_cond, _, _ = model(chunk, prompt, s_gt=None, z=fixed_z)
-            
+            sdf_cond_out, _, _, _, _ = model(chunk, prompt, s_gt=None, z=z_cond)
+
             # 2. Unconditional prediction (with empty string)
-            sdf_uncond, _, _ = model(chunk, [""], s_gt=None, z=fixed_z)
-            
+            sdf_uncond_out, _, _, _, _ = model(chunk, [""], s_gt=None, z=z_uncond)
+
             # 3. Apply Classifier-Free Guidance formula
-            sdf_final = sdf_uncond + cfg_scale * (sdf_cond - sdf_uncond)
+            sdf_final = sdf_uncond_out + cfg_scale * (sdf_cond_out - sdf_uncond_out)
             
             sdf_values.append(sdf_final.squeeze(0).cpu())
             

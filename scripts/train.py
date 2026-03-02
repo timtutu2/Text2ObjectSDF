@@ -174,7 +174,8 @@ def main():
         truncation_dist=loss_cfg['truncation_dist'],
         lambda_codebook=loss_cfg.get('lambda_codebook', 1.0),
         commitment_cost=loss_cfg.get('commitment_cost', 0.25),
-        lambda_eik=loss_cfg['lambda_eik']
+        lambda_eik=loss_cfg['lambda_eik'],
+        lambda_prior=loss_cfg.get('lambda_prior', 1.0),
     ).to(device)
 
     optimizer = torch.optim.Adam(sdf_decoder.parameters(), lr=train_cfg['learning_rate'])
@@ -245,8 +246,8 @@ def main():
             loss_finite = False
             with sync_context:
                 with torch.autocast(device_type="cuda", enabled=amp_enabled, dtype=torch.float16):
-                    sdf_pred, codebook_loss, commitment_loss = sdf_decoder(points, prompts, s_gt=sdf_gt)
-                    loss, loss_dict = criterion(sdf_pred, sdf_gt, codebook_loss, commitment_loss, points)
+                    sdf_pred, codebook_loss, commitment_loss, z_prior, z_q_target = sdf_decoder(points, prompts, s_gt=sdf_gt)
+                    loss, loss_dict = criterion(sdf_pred, sdf_gt, codebook_loss, commitment_loss, points, z_prior, z_q_target)
 
                 loss_finite = torch.isfinite(loss).all().item()
 
@@ -287,9 +288,10 @@ def main():
                 accumulated_finite = False
 
                 reduced_total = all_reduce_mean(loss.detach(), world_size, use_distributed)
-                reduced_sdf   = all_reduce_mean(torch.tensor(loss_dict['loss_sdf'], device=device), world_size, use_distributed)
-                reduced_vq    = all_reduce_mean(torch.tensor(loss_dict['loss_vq'],  device=device), world_size, use_distributed)
-                reduced_eik   = all_reduce_mean(torch.tensor(loss_dict['loss_eik'], device=device), world_size, use_distributed)
+                reduced_sdf   = all_reduce_mean(torch.tensor(loss_dict['loss_sdf'],   device=device), world_size, use_distributed)
+                reduced_vq    = all_reduce_mean(torch.tensor(loss_dict['loss_vq'],    device=device), world_size, use_distributed)
+                reduced_eik   = all_reduce_mean(torch.tensor(loss_dict['loss_eik'],   device=device), world_size, use_distributed)
+                reduced_prior = all_reduce_mean(torch.tensor(loss_dict['loss_prior'], device=device), world_size, use_distributed)
 
                 if use_wandb:
                     wandb.log({
@@ -297,6 +299,7 @@ def main():
                         'Loss/SDF':     reduced_sdf.item(),
                         'Loss/VQ':      reduced_vq.item(),
                         'Loss/Eikonal': reduced_eik.item(),
+                        'Loss/Prior':   reduced_prior.item(),
                         'LR': scheduler.get_last_lr()[0],
                     }, step=global_step)
 
