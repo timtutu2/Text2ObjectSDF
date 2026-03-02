@@ -34,8 +34,9 @@ class Text2ObjectLoss(nn.Module):
         (-0.021) everywhere, producing a constant-negative volume.
 
         Weight scheme:
-          - |sdf_gt| < tau/2  (near-surface): weight = 10.0
-          - otherwise (far field):             weight = 1.0
+          - |sdf_gt| < tau/2  (near-surface):          weight += 15
+          - sdf_gt   < 0      (interior, rare ~4 %):   weight += 25
+          - wrong sign (gt<0, pred>0):                  weight += 20
         """
         # Replace NaN/Inf from unstable forward (AMP, bad init) so loss stays finite
         sdf_pred_safe = torch.nan_to_num(sdf_pred, nan=0.0, posinf=self.tau, neginf=-self.tau)
@@ -45,11 +46,19 @@ class Text2ObjectLoss(nn.Module):
         # Per-point Huber loss (reduction='none' so we can apply weights).
         per_point_loss = F.smooth_l1_loss(pred_clamped, gt_clamped, reduction='none')
 
-        # Up-weight the near-surface band (|sdf_gt| < tau/2).
+        # Standard SDF convention: sdf < 0  → inside mesh,  sdf > 0 → outside.
+        # Interior points account for only ~4 % of samples but define the solid
+        # volume; without upweighting the model can ignore them entirely and
+        # predict positive (outside) everywhere, collapsing the surface.
+        #
+        # Weight scheme:
+        #   near-surface (|sdf_gt| < tau/2): +15  — controls where the zero-crossing sits
+        #   interior     (sdf_gt   < 0):     +25  — rare class, needs upweighting
+        #   wrong sign   (gt < 0, pred > 0): +20  — predicted outside when actually inside
         near_surface_mask = (torch.abs(gt_clamped) < (self.tau * 0.5)).float()
-        inside_mask = (sdf_gt > 0).float()
-        wrong_sign_mask = ((sdf_gt > 0) & (pred_clamped < 0)).float()
-        weights = 1.0 + (15.0 * near_surface_mask) + (25.0 * inside_mask) + (20.0 * wrong_sign_mask)
+        interior_mask     = (sdf_gt < 0).float()
+        wrong_sign_mask   = ((sdf_gt < 0) & (pred_clamped > 0)).float()
+        weights = 1.0 + (15.0 * near_surface_mask) + (25.0 * interior_mask) + (20.0 * wrong_sign_mask)
 
         loss_sdf = (weights * per_point_loss).mean()
         return loss_sdf

@@ -2,6 +2,8 @@
 /ECE_285_Project_Proposal.pdf
 /sampling/model_normalized_*.obj
 /sampling/sdf_data_*.npz
+/sampling/model_4.nrrd
+/sampling/2D_slice_check.png
 /.cursor
 src/models/__pycache__
 model_epoch_100.pth

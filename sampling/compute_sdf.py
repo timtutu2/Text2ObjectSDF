@@ -132,7 +132,24 @@ def compute_and_save(
     print("  Computing SDF (pysdf BVH)...")
     sdf_values = compute_sdf_pysdf(mesh, points)
 
-    # ---- 4. Truncate ----
+    # ---- 4. Filter bogus pysdf sentinels ----
+    # pysdf returns ~float32_max (1.84e+19) for degenerate mesh regions.
+    # These corrupt any downstream MLP that receives raw SDF values.
+    # Max legitimate SDF inside [0,1]^3 is at most sqrt(3) ≈ 1.73, so
+    # we hard-clip anything beyond 2.0 to that threshold.
+    MAX_VALID_SDF = 2.0
+    bogus_mask = np.abs(sdf_values) > MAX_VALID_SDF
+    n_bogus = int(bogus_mask.sum())
+    if n_bogus > 0:
+        # Replace rather than remove so that the total point count stays fixed.
+        # A clipped large-positive value is the safest fallback (outside-mesh).
+        sdf_values = np.where(bogus_mask,
+                              np.clip(sdf_values, -MAX_VALID_SDF, MAX_VALID_SDF),
+                              sdf_values)
+        print(f"  [WARN] Replaced {n_bogus:,} bogus pysdf sentinel value(s) "
+              f"with ±{MAX_VALID_SDF}.")
+
+    # ---- 5. Truncate ----
     sdf_clamp = np.clip(sdf_values, -TAU, TAU).astype(np.float32)
 
     # ---- Stats ----
@@ -144,7 +161,7 @@ def compute_and_save(
     print(f"  Inside={n_inside:,}  Outside={n_outside:,}  "
           f"Near-surface(<1e-3)={n_on:,}")
 
-    # ---- 5. Save ----
+    # ---- 6. Save ----
     np.savez_compressed(
         out_path,
         points    = points,
