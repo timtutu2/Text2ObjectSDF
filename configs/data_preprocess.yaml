@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
   - name: gpu-container
-    image: timttu/text2objectsdf:latest
+    image: timttu/text2objectsdf:v5
     command: ["/bin/bash", "-c"]
     args: [
       "set -e && \
@@ -19,9 +19,11 @@ spec:
         echo 'Repository exists, pulling latest changes...' && \
         cd text2objectsdf && git pull ; \
       fi && \
-      pip install --no-cache-dir notebook jupyterlab debugpy ipdb gdown tqdm && \
+      pip install --no-cache-dir pynrrd && \
+      echo 'installed pynrrd' && \
       cd /mnt/tim/text2objectsdf && \
       bash preprocessing.sh && \
+      echo 'preprocessing finished' && \
 
       mkdir -p /mnt/tim/text2objectsdf/logs && \
       echo 'Starting setup... Sleeping forever...' && \
@@ -43,10 +45,12 @@ spec:
         nvidia.com/gpu: "1"
         memory: "32G"
         cpu: "4"
+        ephemeral-storage: "8Gi"
       requests:
         nvidia.com/gpu: "1"
         memory: "32G"
         cpu: "3"
+        ephemeral-storage: "4Gi"
   restartPolicy: Never
   affinity:
     nodeAffinity:
@@ -57,7 +61,9 @@ spec:
           - key: kubernetes.io/hostname
             operator: NotIn
             values:
-            - "k8s-haosu-04.sdsc.optiputer.net"
+              - "k8s-haosu-04.sdsc.optiputer.net"
+              - "k8s-haosu-22.sdsc.optiputer.net"
+              - "ry-gpu-14.sdsc.optiputer.net"
       preferredDuringSchedulingIgnoredDuringExecution:
       # Empirically determined nodes with good network to download large docker images
       - weight: 100
@@ -155,6 +161,4 @@ spec:
     - name: erl-ucsd
       persistentVolumeClaim:
         claimName: erl-ucsd
-
-
 

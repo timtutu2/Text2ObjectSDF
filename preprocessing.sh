@@ -15,7 +15,7 @@ LOG_FILE="${LOG_DIR}/preprocessing_voxel_256_filter_div_128_solid.log"
 mkdir -p "${LOG_DIR}"
 exec > >(tee "${LOG_FILE}") 2>&1
 
-echo "Preprocessing: OBJ -> SDF"
+echo "Preprocessing: NRRD -> SDF"
 echo "  Input:   ${INPUT_DIR}"
 echo "  Output:  ${OUTPUT_DIR}"
 echo "  Log:     ${LOG_FILE}"
@@ -24,7 +24,7 @@ echo ""
 
 mkdir -p "${OUTPUT_DIR}"
 cd "${SCRIPT_DIR}"
-python sampling/compute_sdf_v2.py \
+python3 sampling/compute_sdf_v2.py \
   --input-dir "${INPUT_DIR}" \
   --output-dir "${OUTPUT_DIR}"
 
