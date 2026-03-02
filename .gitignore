@@ -4,3 +4,4 @@
 /sampling/sdf_data_*.npz
 /.cursor
 src/models/__pycache__
+model_epoch_100.pth
