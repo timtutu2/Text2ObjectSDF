@@ -176,6 +176,7 @@ def main():
         commitment_cost=loss_cfg.get('commitment_cost', 0.25),
         lambda_eik=loss_cfg['lambda_eik'],
         lambda_prior=loss_cfg.get('lambda_prior', 1.0),
+        lambda_far=loss_cfg.get('lambda_far', 0.1),
     ).to(device)
 
     optimizer = torch.optim.Adam(sdf_decoder.parameters(), lr=train_cfg['learning_rate'])
@@ -292,14 +293,16 @@ def main():
                 reduced_vq    = all_reduce_mean(torch.tensor(loss_dict['loss_vq'],    device=device), world_size, use_distributed)
                 reduced_eik   = all_reduce_mean(torch.tensor(loss_dict['loss_eik'],   device=device), world_size, use_distributed)
                 reduced_prior = all_reduce_mean(torch.tensor(loss_dict['loss_prior'], device=device), world_size, use_distributed)
+                reduced_far   = all_reduce_mean(torch.tensor(loss_dict['loss_far'],   device=device), world_size, use_distributed)
 
                 if use_wandb:
                     wandb.log({
-                        'Loss/Total':   reduced_total.item(),
-                        'Loss/SDF':     reduced_sdf.item(),
-                        'Loss/VQ':      reduced_vq.item(),
-                        'Loss/Eikonal': reduced_eik.item(),
-                        'Loss/Prior':   reduced_prior.item(),
+                        'Loss/Total':    reduced_total.item(),
+                        'Loss/SDF':      reduced_sdf.item(),
+                        'Loss/VQ':       reduced_vq.item(),
+                        'Loss/Eikonal':  reduced_eik.item(),
+                        'Loss/Prior':    reduced_prior.item(),
+                        'Loss/FarField': reduced_far.item(),
                         'LR': scheduler.get_last_lr()[0],
                     }, step=global_step)
 

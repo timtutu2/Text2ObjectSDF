@@ -57,7 +57,7 @@ def generate_mesh_from_model(model, prompt, device, resolution=128, chunk_size=1
     print(f"SDF volume stats — min: {sdf_volume.min():.4f}  max: {sdf_volume.max():.4f}  threshold: {threshold}")
     
     if sdf_volume.min() > threshold or sdf_volume.max() < threshold:
-        print("⚠️ Warning: threshold is outside the SDF range. The mesh will be empty.")
+        print("Warning: threshold is outside the SDF range. The mesh will be empty.")
         return None
 
     print("Running Marching Cubes algorithm...")

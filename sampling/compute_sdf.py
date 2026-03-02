@@ -44,8 +44,7 @@ N_UNIFORM      = 100_000   # uniform in [0, 1]^3
 
 SIGMA_FINE     = 0.005     # noise std for fine band  (~0.5 % of bbox)
 SIGMA_WIDE     = 0.05      # noise std for wide band  (~5 % of bbox)
-TAU            = 0.1       # SDF truncation threshold
-
+TAU            = 0.1       # SDF truncation threshold (used only for the stored sdf_clamp key)
 RANDOM_SEED    = 42
 
 

@@ -43,6 +43,7 @@ loss:
   commitment_cost: 0.25     # Weight for commitment loss β (moves encoder → codebook).
   lambda_eik: 0.01          # Eikonal regularization weight.
   lambda_prior: 1.0         # Weight for text-prior alignment loss (TextPrior → z_q MSE).
+  lambda_far: 0.1           # Weight for far-field SDF loss (|sdf_gt| > τ region).
 
 # 4. Inference / Meshing
 inference:

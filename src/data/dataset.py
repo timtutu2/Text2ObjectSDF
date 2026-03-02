@@ -50,12 +50,15 @@ class Text2ObjectDataset(Dataset):
         file_path = self.files[idx]
         model_id = self.model_ids[idx]
 
-        # 1) Load spatial coordinates and ground-truth SDF values.
+        # 1) Load spatial coordinates and raw (unclamped) ground-truth SDF values.
+        # We always use the raw 'sdf' key so that the far-field loss in
+        # Text2ObjectLoss has gradient signal beyond the truncation radius τ.
+        # Hard-clamping to 'sdf_clamp' here would zero out that signal and cause
+        # the model to produce chaotic SDF values far from the surface, which
+        # Marching Cubes then turns into floating mesh fragments.
         data = np.load(file_path)
         points = data['points']  # (N, 3)
-        sdf = data['sdf']    
-        sdf_key = 'sdf_clamp' if 'sdf_clamp' in data else 'sdf'
-        sdf = data[sdf_key]
+        sdf = data['sdf']        # (N,) raw, unclamped
         points = np.clip(points, 0.0, 1.0)
 
         # 2) Randomly subsample points to control per-object batch size.

@@ -13,13 +13,15 @@ class Text2ObjectLoss(nn.Module):
     model learns which codebook region maps to a given text description.
     """
     def __init__(self, truncation_dist=0.1, lambda_codebook=1.0,
-                 commitment_cost=0.25, lambda_eik=0.1, lambda_prior=1.0):
+                 commitment_cost=0.25, lambda_eik=0.1, lambda_prior=1.0,
+                 lambda_far=0.1):
         super().__init__()
         self.tau              = truncation_dist
         self.lambda_codebook  = lambda_codebook   # weight for codebook loss
         self.commitment_cost  = commitment_cost   # weight for commitment loss (β in VQ-VAE)
         self.lambda_eik       = lambda_eik
         self.lambda_prior     = lambda_prior      # weight for text-prior alignment loss
+        self.lambda_far       = lambda_far        # weight for far-field SDF regularization
 
     def compute_sdf_loss(self, sdf_pred, sdf_gt):
         """
@@ -51,6 +53,35 @@ class Text2ObjectLoss(nn.Module):
 
         loss_sdf = (weights * per_point_loss).mean()
         return loss_sdf
+
+    def compute_far_loss(self, sdf_pred, sdf_gt_raw):
+        """
+        Far-field regularization loss.
+
+        The truncated surface loss is blind to every point with |sdf_gt| > τ: both
+        the GT and the prediction get clamped to the same ±τ constant, so the
+        gradient is exactly zero there.  Without any signal in that region the model
+        learns arbitrary SDF values far from the surface, which Marching Cubes
+        interprets as extra zero-crossings — the floating fragments visible in the
+        reconstructed mesh.
+
+        This loss provides a soft gradient signal for those far-field points.
+        We cap the GT at ±3τ (instead of using the raw value) so that the handful
+        of points that are very far from the surface (raw SDF ≈ 1.4 in the corner
+        of the unit cube) don't dominate and destabilise training.
+
+        L_far = mean over far-field points of SmoothL1(pred_clamped_3τ, gt_clamped_3τ)
+        """
+        far_mask = (torch.abs(sdf_gt_raw) > self.tau)
+        if not far_mask.any():
+            return torch.tensor(0.0, device=sdf_pred.device)
+
+        cap = 3.0 * self.tau
+        gt_far   = torch.clamp(sdf_gt_raw, -cap, cap)
+        pred_far = torch.clamp(sdf_pred,   -cap, cap)
+
+        per_point = F.smooth_l1_loss(pred_far, gt_far, reduction='none')
+        return per_point[far_mask].mean()
 
     def compute_vq_loss(self, codebook_loss, commitment_loss):
         """
@@ -120,11 +151,18 @@ class Text2ObjectLoss(nn.Module):
         if z_prior is not None and z_q_target is not None:
             l_prior = self.compute_prior_loss(z_prior, z_q_target)
 
-        total_loss = l_sdf + l_vq + (self.lambda_eik * l_eik) + (self.lambda_prior * l_prior)
+        l_far = self.compute_far_loss(sdf_pred_safe, sdf_gt)
+
+        total_loss = (l_sdf
+                      + l_vq
+                      + self.lambda_eik   * l_eik
+                      + self.lambda_prior * l_prior
+                      + self.lambda_far   * l_far)
 
         return total_loss, {
             "loss_sdf":   l_sdf.item(),
             "loss_vq":    l_vq.item(),
             "loss_eik":   l_eik.item(),
             "loss_prior": l_prior.item(),
+            "loss_far":   l_far.item(),
         }
