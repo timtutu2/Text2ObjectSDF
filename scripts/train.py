@@ -35,16 +35,6 @@ def parse_args():
         default=PROJECT_ROOT / "configs" / "default.yaml",
         help="Path to the experiment config YAML.",
     )
-    parser.add_argument("--batch-size", type=int, default=None, help="Override per-process batch size.")
-    parser.add_argument("--points-per-batch", type=int, default=None, help="Override points sampled per object.")
-    parser.add_argument("--num-workers", type=int, default=None, help="Override DataLoader worker count.")
-    parser.add_argument("--learning-rate", type=float, default=None, help="Override optimizer learning rate.")
-    parser.add_argument("--num-epochs", type=int, default=None, help="Override number of epochs.")
-    parser.add_argument("--save-interval", type=int, default=None, help="Override checkpoint save interval.")
-    parser.add_argument("--grad-accum-steps", type=int, default=None, help="Override gradient accumulation steps.")
-    amp_group = parser.add_mutually_exclusive_group()
-    amp_group.add_argument("--amp", action="store_true", help="Enable fp16 mixed precision on CUDA.")
-    amp_group.add_argument("--no-amp", action="store_true", help="Disable mixed precision.")
     return parser.parse_args()
 
 
@@ -75,25 +65,7 @@ def init_distributed():
     }
 
 
-def override_training_config(train_cfg, args):
-    overrides = {
-        "batch_size": args.batch_size,
-        "points_per_batch": args.points_per_batch,
-        "num_workers": args.num_workers,
-        "learning_rate": args.learning_rate,
-        "num_epochs": args.num_epochs,
-        "save_interval": args.save_interval,
-        "grad_accum_steps": args.grad_accum_steps,
-    }
-    for key, value in overrides.items():
-        if value is not None:
-            train_cfg[key] = value
-
-    if args.amp:
-        train_cfg["amp"] = True
-    elif args.no_amp:
-        train_cfg["amp"] = False
-
+def normalize_training_config(train_cfg):
     train_cfg["grad_accum_steps"] = max(1, int(train_cfg.get("grad_accum_steps", 1)))
     train_cfg["amp"] = bool(train_cfg.get("amp", False))
     return train_cfg
@@ -128,8 +100,7 @@ def main():
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    train_cfg = config['training']
-    train_cfg = override_training_config(train_cfg, args)
+    train_cfg = normalize_training_config(config['training'])
     model_cfg = config['model']
     loss_cfg = config['loss']
     log_cfg = config.get('logging', {})
@@ -335,7 +306,7 @@ def main():
                         print(
                             f"[WARNING] NaN loss at step {global_step}. "
                             f"SDF={loss_dict['loss_sdf']:.4f} VQ={loss_dict['loss_vq']:.4f} "
-                            f"Eik={loss_dict['loss_eik']:.4f}. Try --no-amp to rule out fp16 overflow."
+                            f"Eik={loss_dict['loss_eik']:.4f}. Set training.amp=false in the config to rule out fp16 overflow."
                         )
                     elif global_step % 50 == 0:
                         print(

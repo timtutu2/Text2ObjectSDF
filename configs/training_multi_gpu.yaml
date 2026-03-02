@@ -33,11 +33,7 @@ spec:
           LOGFILE=logs/text2object_$(date +%Y%m%d_%H%M%S).log && \
           echo \"Saving logs to $LOGFILE\" && \
           torchrun --standalone --nnodes=1 --nproc_per_node=4 scripts/train.py \
-            --config configs/default.yaml \
-            --points-per-batch 4096 \
-            --num-workers 2 \
-            --grad-accum-steps 8 \
-            --no-amp 2>&1 | tee $LOGFILE && \
+            --config configs/default.yaml 2>&1 | tee $LOGFILE && \
           echo \"Training completed. Logs saved to $LOGFILE\""
         ]
         env:
@@ -80,6 +76,7 @@ spec:
                 operator: NotIn
                 values:
                 - "k8s-haosu-04.sdsc.optiputer.net"
+                - "k8s-haosu-22.sdsc.optiputer.net"
                 - "ry-gpu-14.sdsc.optiputer.net"
           # Prefer nodes with good network for faster docker image pulls
           preferredDuringSchedulingIgnoredDuringExecution:
