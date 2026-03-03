@@ -239,38 +239,44 @@ def main():
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model_dirs = sorted([p for p in input_dir.iterdir() if p.is_dir()])
-    if not model_dirs:
-        raise FileNotFoundError(f"No model subdirectories found under {input_dir}")
+    # ------------------------------------------------------------------
+    # Discover all .nrrd files under input_dir (any depth).
+    #
+    # This supports both:
+    #   - "flat" layouts: input_dir/<model_id>/*.nrrd
+    #   - ShapeNet-style layouts: input_dir/<synset>/<model_id>/*.nrrd
+    #
+    # We treat the parent directory of each .nrrd file as the model_id.
+    # This matches the earlier OBJ-based pipeline where each model lived
+    # in its own directory named by model_id, and also lets us safely
+    # resume: if an NPZ with that model_id already exists, we skip it.
+    # ------------------------------------------------------------------
+    print(f"Scanning for .nrrd files under {input_dir} ...")
+    nrrd_files = sorted(input_dir.rglob("*.nrrd"))
+    if not nrrd_files:
+        raise FileNotFoundError(f"No .nrrd files found under {input_dir}")
 
-    jobs = []
-    for model_dir in model_dirs:
-        nrrd_path = find_nrrd_in_dir(model_dir)
-        if nrrd_path is None:
-            print(f"[SKIP] {model_dir.name}: no .nrrd found")
-            continue
-        jobs.append((model_dir.name, nrrd_path))
-
-    if not jobs:
-        raise FileNotFoundError(f"No .nrrd files found under any subdirectory of {input_dir}")
-
-    print(f"Found {len(jobs)} NRRD file(s) under {input_dir}")
+    print(f"Found {len(nrrd_files)} NRRD file(s) under {input_dir}")
     print(f"Config: tau={args.tau}  n_points={args.n_points:,}  near_ratio={args.near_ratio}")
 
     skipped = 0
     processed = 0
-    for model_id, nrrd_path in jobs:
+    for nrrd_path in nrrd_files:
+        model_id = nrrd_path.parent.name
         out_npz_path = output_dir / f"{model_id}.npz"
+
         if out_npz_path.is_file():
             print(f"[SKIP] {model_id}: output already exists at {out_npz_path}")
             skipped += 1
             continue
+
         print("")
         print("=" * 60)
         print(f"Processing: {model_id}")
         print(f"  Input NRRD: {nrrd_path}")
         print(f"  Output NPZ: {out_npz_path}")
         print("=" * 60)
+
         compute_and_save(
             nrrd_path=str(nrrd_path),
             out_npz_path=str(out_npz_path),
