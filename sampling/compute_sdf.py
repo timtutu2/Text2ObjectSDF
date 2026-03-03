@@ -237,9 +237,17 @@ def main():
               f"uniform={N_UNIFORM:,}  sigma_fine={SIGMA_FINE}  "
               f"sigma_wide={SIGMA_WIDE}  tau={TAU}")
 
+        skipped = 0
+        processed = 0
         for obj_path, model_id in obj_list:
             out_path = os.path.join(output_dir, model_id)
+            out_file = out_path + ".npz"
+            if os.path.isfile(out_file):
+                print(f"Skipping {model_id}: output already exists at {out_file}")
+                skipped += 1
+                continue
             compute_and_save(obj_path, out_path, rng)
+            processed += 1
 
         verify = os.path.join(output_dir, f"{obj_list[0][1]}.npz")
         if os.path.isfile(verify):
@@ -249,7 +257,7 @@ def main():
             for k, v in d.items():
                 print(f"  {k:12s}: shape={v.shape}  dtype={v.dtype}  "
                       f"range=[{v.min():.4f}, {v.max():.4f}]")
-        print("\nAll done.")
+        print(f"\nAll done. Processed={processed:,}  Skipped={skipped:,}")
         return
 
     # Legacy: model_normalized_*.obj in script directory
@@ -267,11 +275,19 @@ def main():
           f"uniform={N_UNIFORM:,}  sigma_fine={SIGMA_FINE}  "
           f"sigma_wide={SIGMA_WIDE}  tau={TAU}")
 
+    skipped = 0
+    processed = 0
     for obj_path in obj_files:
         stem     = os.path.splitext(os.path.basename(obj_path))[0]   # model_normalized_1
         idx      = stem.split("_")[-1]                                # 1
         out_path = os.path.join(SAMPLING_DIR, f"sdf_data_{idx}")
+        out_file = out_path + ".npz"
+        if os.path.isfile(out_file):
+            print(f"Skipping {stem}: output already exists at {out_file}")
+            skipped += 1
+            continue
         compute_and_save(obj_path, out_path, rng)
+        processed += 1
 
     # ---- Verify first output ----
     first_idx = os.path.splitext(os.path.basename(obj_files[0]))[0].split("_")[-1]
@@ -282,7 +298,7 @@ def main():
     for k, v in d.items():
         print(f"  {k:12s}: shape={v.shape}  dtype={v.dtype}  "
               f"range=[{v.min():.4f}, {v.max():.4f}]")
-    print("\nAll done.")
+    print(f"\nAll done. Processed={processed:,}  Skipped={skipped:,}")
 
 
 if __name__ == "__main__":
