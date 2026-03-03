@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-data = np.load("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/sdf_data_4.npz")
+data = np.load("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/sampling.npz")
 sdf = data["sdf_grid"]
 
 save_path = "/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/2D_slice_check.png"

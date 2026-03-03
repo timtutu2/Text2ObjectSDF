@@ -11,35 +11,41 @@ import nrrd
 
 def get_spacing_from_nrrd_header(hdr, ndim=3, default=1.0):
     """
-    Return a tuple of length=ndim for scipy.ndimage.distance_transform_edt(sampling=...).
-    Handles NRRD headers that may include extra dims / None entries.
+    Robustly return spacing for the LAST `ndim` spatial axes.
+    Works for NRRD volumes with leading non-spatial dims (e.g., channels),
+    where 'space directions' for those dims may be None/NaN.
     """
-    # 1) Try 'spacings'
-    sp = hdr.get("spacings", None)
-    if sp is not None:
-        sp = [default if (x is None) else float(x) for x in list(sp)]
-        # keep last ndim or first ndim? usually first correspond to spatial axes
-        # safest: take first ndim
-        if len(sp) >= ndim:
-            return tuple(sp[:ndim])
-
-    # 2) Try 'space directions' (each is a vector; spacing = norm)
+    # Prefer space directions (most reliable for NRRD)
     sd = hdr.get("space directions", None)
     if sd is not None:
         norms = []
         for v in list(sd):
+            # v can be None or contain nan
             if v is None:
-                norms.append(default)
+                norms.append(np.nan)
             else:
-                v = np.array(v, dtype=np.float32).reshape(-1)
-                norms.append(float(np.linalg.norm(v)))
-        if len(norms) >= ndim:
-            return tuple(norms[:ndim])
+                v = np.array(v, dtype=np.float64).reshape(-1)
+                n = float(np.linalg.norm(v))
+                norms.append(n)
 
-    # 3) Fallback
+        norms = np.array(norms, dtype=np.float64)
+
+        # Keep only finite, positive norms (spatial dims)
+        valid = norms[np.isfinite(norms) & (norms > 0)]
+        if len(valid) >= ndim:
+            # take the last ndim (spatial axes)
+            return tuple(valid[-ndim:].tolist())
+
+    # Fallback to 'spacings' if present
+    sp = hdr.get("spacings", None)
+    if sp is not None:
+        sp = np.array([np.nan if (x is None) else float(x) for x in list(sp)], dtype=np.float64)
+        valid = sp[np.isfinite(sp) & (sp > 0)]
+        if len(valid) >= ndim:
+            return tuple(valid[-ndim:].tolist())
+
+    # Final fallback
     return tuple([default] * ndim)
-
-
 def voxel_to_sdf(voxel, spacing=(1.0, 1.0, 1.0)):
     """
     voxel: 3D array, 1=occupied/inside, 0=empty/outside

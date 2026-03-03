@@ -1,11 +1,16 @@
 import numpy as np
 from skimage.measure import marching_cubes
+import nrrd
 
-data = np.load("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/19d3ba04e165e67dcb4387db711dc078_sdf_tau0p1.npz")
+data = np.load("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/sampling.npz")
+
+data_nrrd, header = nrrd.read("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/model_4.nrrd")
 
 vol = data["sdf_grid"]
-verts, faces, normals, _ = marching_cubes(vol, level=0)
+print(header.get("space directions"))
+print(data.files)
+# verts, faces, normals, _ = marching_cubes(vol, level=0)
 
-import trimesh
-mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
-mesh.show()
+# import trimesh
+# mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
+# mesh.show()
