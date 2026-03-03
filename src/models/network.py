@@ -64,6 +64,9 @@ class Text2ObjectNetwork(nn.Module):
         Returns (inference): sdf_pred, 0.0,           0.0,             None,    None
           z_prior    — text_prior(e), used for prior loss supervision
           z_q_target — stop-gradient VQ-encoder output, target for z_prior
+
+        At training the decoder is conditioned on z = quantize(text_prior(e)), not on
+        the VQ encoder output, so train and inference use the same text→z path.
         """
         device = x.device
         batch_size, n_points, _ = x.shape
@@ -78,15 +81,17 @@ class Text2ObjectNetwork(nn.Module):
         z_q_target  = None
 
         if s_gt is not None:
-            # Training: encode shape observations through the PointNet → VQ bottleneck.
+            # Training: run VQ encoder for codebook/commitment loss and prior target.
             # x is detached so the Eikonal gradient ∂ŝ/∂x never flows into PointNet.
-            z, z_e, codebook_loss, commitment_loss, _ = self.vq_encoder(
+            z_vq, z_e, codebook_loss, commitment_loss, _ = self.vq_encoder(
                 x.detach(), s_gt, e
             )
-            # Text prior predicts what z_q should be given only the text.
-            # z_q_target is the stop-gradient codebook entry — supervision target.
-            z_prior    = self.text_prior(e)
-            z_q_target = z.detach()  # z == z_q_st; .detach() gives the codebook values
+            z_q_target = z_vq.detach()  # stop-gradient codebook entry for L_prior
+            # Decoder is conditioned on text-prior path (same as inference) to close
+            # train/inference gap: SDF is predicted from z = quantize(text_prior(e)).
+            z_prior = self.text_prior(e)
+            _, _, _, indices = self.vq_encoder.vq(z_prior)
+            z = self.vq_encoder.vq.codebook(indices)   # (B, latent_dim)
 
         elif z is None:
             # Inference: derive z entirely from the text via the learned prior.
