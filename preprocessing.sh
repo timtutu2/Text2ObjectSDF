@@ -8,7 +8,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_DIR="/mnt/tim/data/ShapeNetCore/nrrd_256_filter_div_128_solid/nrrd_256_filter_div_128_solid"
-OUTPUT_DIR="/mnt/tim/data/ShapeNetCore/voxel_256_filter_div_128_solid"
+OUTPUT_DIR="/mnt/tim/data/ShapeNetCore/voxel_256_filter_div_128_solid_2"
 LOG_DIR="/mnt/tim/text2objectsdf/logs"
 LOG_FILE="${LOG_DIR}/preprocessing_voxel_256_filter_div_128_solid.log"
 
