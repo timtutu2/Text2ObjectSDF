@@ -7,3 +7,4 @@
 /.cursor
 src/models/__pycache__
 model_epoch_100.pth
+*.pth

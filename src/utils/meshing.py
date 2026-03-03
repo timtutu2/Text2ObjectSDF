@@ -8,9 +8,9 @@ def generate_mesh_from_model(model, prompt, device, resolution=128, chunk_size=1
     model.eval()
     print(f"Generating 3D grid at resolution {resolution}^3 with CFG scale {cfg_scale}...")
     
-    x = torch.linspace(0, 1, resolution)
-    y = torch.linspace(0, 1, resolution)
-    z_axis = torch.linspace(0, 1, resolution)
+    x = torch.linspace(-0.5, 0.5, resolution)
+    y = torch.linspace(-0.5, 0.5, resolution)
+    z_axis = torch.linspace(-0.5, 0.5, resolution)
     xx, yy, zz = torch.meshgrid(x, y, z_axis, indexing='ij')
     
     grid_points = torch.stack([xx, yy, zz], dim=-1).contiguous().view(-1, 3).to(device)
