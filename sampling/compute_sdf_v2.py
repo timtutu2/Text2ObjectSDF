@@ -257,8 +257,14 @@ def main():
     print(f"Found {len(jobs)} NRRD file(s) under {input_dir}")
     print(f"Config: tau={args.tau}  n_points={args.n_points:,}  near_ratio={args.near_ratio}")
 
+    skipped = 0
+    processed = 0
     for model_id, nrrd_path in jobs:
         out_npz_path = output_dir / f"{model_id}.npz"
+        if out_npz_path.is_file():
+            print(f"[SKIP] {model_id}: output already exists at {out_npz_path}")
+            skipped += 1
+            continue
         print("")
         print("=" * 60)
         print(f"Processing: {model_id}")
@@ -272,9 +278,10 @@ def main():
             n_points=args.n_points,
             near_ratio=args.near_ratio,
         )
+        processed += 1
 
     print("")
-    print("All done.")
+    print(f"All done. Processed={processed:,}  Skipped={skipped:,}")
 
 
 if __name__ == "__main__":
