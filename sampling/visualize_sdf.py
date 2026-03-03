@@ -7,9 +7,9 @@ data = np.load("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/sampling.n
 
 data_nrrd, header = nrrd.read("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/model_4.nrrd")
 
-# vol = data["sdf_grid"]
-# print(header.get("space directions"))
-# print(data.files)
+vol = data["sdf_grid"]
+print(header.get("space directions"))
+print(data.files)
 
 ###############################
 # Check the data
