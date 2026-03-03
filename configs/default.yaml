@@ -8,6 +8,9 @@ logging:
   wandb_project: "text2object-sdf"
   wandb_enabled: true   # Set WANDB_API_KEY in env (e.g. K8s secret) to log to wandb
 
+version:
+  name: "small_scale"
+
 # 1. Network Architecture
 model:
   text_embed_dim: 512       # CLIP ViT-B/32 output dimension.
@@ -27,13 +30,13 @@ model:
 training:
   batch_size: 64
   num_workers: 8
-  num_epochs: 800
+  num_epochs: 100
   learning_rate: 0.0005
   points_per_batch: 4096
-  save_interval: 20
+  save_interval: 5
   grad_accum_steps: 8
-  warmup_epochs: 100        # Phase 1: linear ramp from ~0 → lr.
-  stable_epochs: 300        # Phase 2: constant at lr  (800-100-300 = 400 decay epochs).
+  warmup_epochs: 20        # Phase 1: linear ramp from ~0 → lr.
+  stable_epochs: 50        # Phase 2: constant at lr  (800-100-300 = 400 decay epochs).
   amp: false
   
 # 3. Loss Weights

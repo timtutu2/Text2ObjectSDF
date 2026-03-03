@@ -104,8 +104,9 @@ def main():
     model_cfg = config['model']
     loss_cfg = config['loss']
     log_cfg = config.get('logging', {})
+    version_cfg = config.get('version', {})
 
-    checkpoints_dir = PROJECT_ROOT / "checkpoints"
+    checkpoints_dir = PROJECT_ROOT / "checkpoints" / version_cfg.get('name', 'default')
     if is_main_process:
         os.makedirs(checkpoints_dir, exist_ok=True)
 
