@@ -55,17 +55,25 @@ def generate_mesh_from_model(model, prompt, device, resolution=128, chunk_size=1
     
     # Print stats for debugging
     print(f"SDF volume stats — min: {sdf_volume.min():.4f}  max: {sdf_volume.max():.4f}  threshold: {threshold}")
-    
+
+    # If the model never predicts negative SDF (e.g. underfitting), the zero-level set
+    # is missing. Use the midpoint of the predicted range so we still get a mesh for
+    # debugging; the surface will be at the "learned" iso-value rather than true zero.
+    effective_threshold = threshold
     if sdf_volume.min() > threshold or sdf_volume.max() < threshold:
-        print("Warning: threshold is outside the SDF range. The mesh will be empty.")
-        return None
+        effective_threshold = float(0.5 * (sdf_volume.min() + sdf_volume.max()))
+        print(
+            f"Warning: threshold {threshold} outside SDF range. "
+            f"Using midpoint {effective_threshold:.4f} as iso-value (fallback; model may need more training)."
+        )
 
     print("Running Marching Cubes algorithm...")
-    vertices, triangles = mcubes.marching_cubes(sdf_volume, threshold)
-    
+    vertices, triangles = mcubes.marching_cubes(sdf_volume, effective_threshold)
+
     if len(vertices) == 0:
         return None
-        
-    vertices = vertices / (resolution - 1)
+
+    # Map voxel indices [0, resolution-1] to physical coords [-0.5, 0.5]
+    vertices = vertices / (resolution - 1) - 0.5
     mesh = trimesh.Trimesh(vertices, triangles)
     return mesh
