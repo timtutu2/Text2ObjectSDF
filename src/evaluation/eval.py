@@ -14,6 +14,8 @@ from src.models.network import Text2ObjectNetwork
 from src.utils.meshing import generate_mesh_from_model
 import re
 
+DEFAULT_CHECKPOINT = PROJECT_ROOT / "checkpoints" / "default" / "stage2_model_final.pth"
+
 
 def sanitize_filename(text: str) -> str:
     """Convert a text description into a safe filename stem."""
@@ -34,7 +36,7 @@ def parse_args():
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=PROJECT_ROOT / "model_epoch_100.pth",
+        default=DEFAULT_CHECKPOINT,
         help="Path to the trained model checkpoint (.pth).",
     )
     parser.add_argument(
@@ -63,10 +65,21 @@ def main():
 
     model_cfg = config["model"]
     infer_cfg = config["inference"]
+    version_cfg = config.get("version", {})
 
     checkpoint_path = args.checkpoint
+    if checkpoint_path == DEFAULT_CHECKPOINT:
+        checkpoint_path = PROJECT_ROOT / "checkpoints" / version_cfg.get("name", "default") / "stage2_model_final.pth"
     if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+        stage1_fallback = checkpoint_path.with_name("stage1_model_final.pth")
+        if stage1_fallback.exists():
+            checkpoint_path = stage1_fallback
+            print(
+                f"Stage2 checkpoint not found. Falling back to stage1 checkpoint: {stage1_fallback} "
+                "(text prior may be untrained)."
+            )
+        else:
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     text = args.text
     if text is None:
@@ -107,7 +120,10 @@ def main():
         resolution=infer_cfg["resolution"],
         chunk_size=infer_cfg["chunk_size"],
         threshold=infer_cfg["threshold"],
-        cfg_scale=infer_cfg.get("cfg_scale", 3.0),
+        temperature=infer_cfg.get("temperature", 1.0),
+        top_k=infer_cfg.get("top_k"),
+        top_p=infer_cfg.get("top_p", 1.0),
+        deterministic=infer_cfg.get("deterministic", False),
     )
 
     if mesh is not None:

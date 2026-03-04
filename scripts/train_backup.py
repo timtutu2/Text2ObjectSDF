@@ -289,7 +289,9 @@ def main():
             loss_finite = False
             with sync_context:
                 with torch.autocast(device_type="cuda", enabled=amp_enabled, dtype=torch.float16):
-                    sdf_pred, codebook_loss, commitment_loss = sdf_decoder(points, prompts, s_gt=sdf_gt)
+                    sdf_pred, codebook_loss, commitment_loss, _ = sdf_decoder(
+                        points, s_gt=sdf_gt, mode="stage1"
+                    )
 
                     # Loss computation & backpropagation
                     loss, loss_dict = criterion(sdf_pred, sdf_gt, codebook_loss, commitment_loss, points)

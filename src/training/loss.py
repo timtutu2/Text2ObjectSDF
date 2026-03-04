@@ -4,13 +4,7 @@ import torch.nn.functional as F
 
 class Text2ObjectLoss(nn.Module):
     """
-    Combined loss function for the VQ-VAE SDF network.
-    L = L_sdf + L_vq + lambda_eik * L_eik + lambda_prior * L_prior
-
-    L_prior supervises the TextPrior module: it minimises the MSE between the
-    text-conditioned prior z_prior and the PointNet VQ-encoder's quantised
-    output z_q (stop-gradient).  This closes the train/inference gap — the
-    model learns which codebook region maps to a given text description.
+    Loss for SDF reconstruction + VQ regularization (+ optional prior CE).
     """
     def __init__(self, truncation_dist=0.1, lambda_sdf=1.0, lambda_codebook=1.0,
                  commitment_cost=0.25, lambda_eik=0.1, lambda_prior=1.0,
@@ -21,7 +15,7 @@ class Text2ObjectLoss(nn.Module):
         self.lambda_codebook  = lambda_codebook   # weight for codebook loss
         self.commitment_cost  = commitment_cost   # weight for commitment loss (β in VQ-VAE)
         self.lambda_eik       = lambda_eik
-        self.lambda_prior     = lambda_prior      # weight for text-prior alignment loss
+        self.lambda_prior     = lambda_prior      # optional weight for prior CE
         self.lambda_far       = lambda_far        # weight for far-field SDF regularization
 
     def compute_sdf_loss(self, sdf_pred, sdf_gt):
@@ -102,17 +96,11 @@ class Text2ObjectLoss(nn.Module):
         """
         return self.lambda_codebook * codebook_loss + self.commitment_cost * commitment_loss
 
-    def compute_prior_loss(self, z_prior, z_q_target):
+    def compute_prior_loss(self, prior_logits, target_indices):
         """
-        Text-prior alignment loss.
-        Pushes the text-conditioned prior z_prior toward the PointNet VQ-encoder's
-        quantised output z_q_target (stop-gradient).  After training, the prior can
-        replace the PointNet encoder at inference time so that generation is driven
-        by text alone rather than random codebook sampling.
-
-        L_prior = MSE(z_prior, z_q_target.detach())
+        Prior classification loss over codebook indices.
         """
-        return F.mse_loss(z_prior, z_q_target)
+        return F.cross_entropy(prior_logits, target_indices.long())
 
     def compute_eikonal_loss(self, sdf_pred, points):
         """
@@ -143,12 +131,9 @@ class Text2ObjectLoss(nn.Module):
         return eikonal_loss
 
     def forward(self, sdf_pred, sdf_gt, codebook_loss, commitment_loss, points,
-                z_prior=None, z_q_target=None):
+                prior_logits=None, target_indices=None):
         """
-        Total loss: L = lambda_sdf*L_sdf + L_vq + lambda_eik*L_eik + lambda_prior*L_prior + lambda_far*L_far.
-
-        z_prior    — text_prior(e) prediction  (None at inference, skips L_prior)
-        z_q_target — stop-gradient VQ target   (None at inference)
+        Total loss: L = lambda_sdf*L_sdf + L_vq + lambda_eik*L_eik + lambda_far*L_far (+ optional lambda_prior*L_prior).
         """
         codebook_loss = torch.nan_to_num(codebook_loss, nan=0.0, posinf=1.0, neginf=0.0)
         commitment_loss = torch.nan_to_num(commitment_loss, nan=0.0, posinf=1.0, neginf=0.0)
@@ -158,8 +143,8 @@ class Text2ObjectLoss(nn.Module):
         l_eik = self.compute_eikonal_loss(sdf_pred_safe, points)
 
         l_prior = torch.tensor(0.0, device=sdf_pred.device)
-        if z_prior is not None and z_q_target is not None:
-            l_prior = self.compute_prior_loss(z_prior, z_q_target)
+        if prior_logits is not None and target_indices is not None:
+            l_prior = self.compute_prior_loss(prior_logits, target_indices)
 
         l_far = self.compute_far_loss(sdf_pred_safe, sdf_gt)
 

@@ -6,15 +6,16 @@ from .film import FiLMLayer
 
 class Text2ObjectNetwork(nn.Module):
     """
-    Top-level network integrating the Spatial and Semantic branches.
-    Corresponds to Section 2.3: System Pipeline.
+    Text-to-shape architecture:
+      1) Shape VQ encoder learns geometry tokens from (x, sdf_gt) only.
+      2) Text prior predicts token distribution p(k|text).
+      3) HashGrid + FiLM decoder predicts SDF conditioned only on token embedding.
     """
     def __init__(self, text_embed_dim=512, latent_dim=128, hidden_dim=256, num_layers=4, num_embeddings=512, hashgrid=None):
         super().__init__()
         self.latent_dim = latent_dim
+        self.num_embeddings = num_embeddings
 
-        # --- 1. Branch initialization ---
-        # Spatial control branch (HashGrid encoding).
         hg = hashgrid or {}
         self.spatial_encoder = SpatialEncoder(
             n_levels=hg.get('n_levels', 16),
@@ -24,94 +25,138 @@ class Text2ObjectNetwork(nn.Module):
         )
         spatial_dim = self.spatial_encoder.output_dim
 
-        # Semantic and latent control branches (CLIP + VQ-VAE + text prior).
         self.semantic_encoder = SemanticEncoder()
-        self.vq_encoder = ShapeVQEncoder(text_embed_dim, latent_dim, num_embeddings=num_embeddings)
-        # Text-conditioned prior: maps CLIP text feature → VQ latent space.
-        # Supervised at training time to predict the PointNet encoder's z_q output,
-        # enabling text-only inference without GT SDF observations.
-        self.text_prior = TextPrior(text_embed_dim, latent_dim)
+        self.vq_encoder = ShapeVQEncoder(latent_dim=latent_dim, num_embeddings=num_embeddings)
+        self.text_prior = TextPrior(text_embed_dim=text_embed_dim, num_embeddings=num_embeddings)
 
-        # --- 2. FiLM decoder initialization ---
-        self.condition_dim = text_embed_dim + latent_dim
+        self.condition_dim = latent_dim
         self.decoder_layers = nn.ModuleList()
 
-        # First layer receives HashGrid output.
         self.decoder_layers.append(FiLMLayer(spatial_dim, hidden_dim, self.condition_dim))
 
-        # Subsequent hidden layers.
         for _ in range(num_layers - 1):
             self.decoder_layers.append(FiLMLayer(hidden_dim, hidden_dim, self.condition_dim))
 
-        # Final scalar SDF output layer.
-        # xavier_uniform with gain=0.1 gives weight std ≈ 0.009, producing initial SDF
-        # predictions with std ≈ 0.04 — large enough that ∂L/∂h is non-negligible and
-        # gradients actually reach the HashGrid and FiLM layers.
-        # (std=1e-4 previously killed all upstream gradients, causing constant-output collapse.)
         self.output_layer = nn.Linear(hidden_dim, 1)
         nn.init.xavier_uniform_(self.output_layer.weight, gain=0.1)
         nn.init.zeros_(self.output_layer.bias)
 
-    def forward(self, x, prompts, s_gt=None, z=None):
-        """
-        x:       3D query coordinates (Batch, N, 3)
-        prompts: text descriptions List[str]
-        s_gt:    ground-truth SDF (Batch, N); provide during training, None at inference.
-        z:       pre-computed latent code (Batch, latent_dim) for chunked inference.
-                 If supplied, skips both the VQ encoder and the text prior.
-
-        Returns (training):  sdf_pred, codebook_loss, commitment_loss, z_prior, z_q_target
-        Returns (inference): sdf_pred, 0.0,           0.0,             None,    None
-          z_prior    — text_prior(e), used for prior loss supervision
-          z_q_target — stop-gradient VQ-encoder output, target for z_prior
-
-        At training the decoder is conditioned on z = quantize(text_prior(e)), not on
-        the VQ encoder output, so train and inference use the same text→z path.
-        """
-        device = x.device
+    def decode_sdf(self, x, cond_z):
         batch_size, n_points, _ = x.shape
-
-        # 1. Semantic Flow: frozen CLIP text feature e.
-        e = self.semantic_encoder(prompts, device)
-
-        # 2. Latent Flow
-        codebook_loss   = torch.tensor(0.0, device=device)
-        commitment_loss = torch.tensor(0.0, device=device)
-        z_prior     = None
-        z_q_target  = None
-
-        if s_gt is not None:
-            # Training: run VQ encoder for codebook/commitment loss and prior target.
-            # x is detached so the Eikonal gradient ∂ŝ/∂x never flows into PointNet.
-            z_vq, z_e, codebook_loss, commitment_loss, _ = self.vq_encoder(
-                x.detach(), s_gt, e
-            )
-            z_q_target = z_vq.detach()  # stop-gradient codebook entry for L_prior
-            # Decoder is conditioned on text-prior path (same as inference) to close
-            # train/inference gap: SDF is predicted from z = quantize(text_prior(e)).
-            z_prior = self.text_prior(e)
-            _, _, _, indices = self.vq_encoder.vq(z_prior)
-            z = self.vq_encoder.vq.codebook(indices)   # (B, latent_dim)
-
-        elif z is None:
-            # Inference: derive z entirely from the text via the learned prior.
-            # Quantize z_prior to the nearest codebook entry so the FiLM decoder
-            # receives an in-distribution latent (same space as during training).
-            z_prior = self.text_prior(e)
-            _, _, _, indices = self.vq_encoder.vq(z_prior)
-            z = self.vq_encoder.vq.codebook(indices)   # (B, latent_dim)
-
-        # 3. Spatial Flow: multi-resolution HashGrid features.
         x_flat = x.view(-1, 3)
         h = self.spatial_encoder(x_flat)
         h = h.view(batch_size, n_points, -1)
 
-        # 4. FiLM decoding: modulate spatial features with [e ‖ z].
-        condition_vec = torch.cat([e, z], dim=-1)   # (B, condition_dim)
         for layer in self.decoder_layers:
-            h = layer(h, condition_vec)
+            h = layer(h, cond_z)
 
-        # 5. Scalar SDF output.
-        sdf_pred = self.output_layer(h).squeeze(-1)
+        return self.output_layer(h).squeeze(-1)
 
-        return sdf_pred, codebook_loss, commitment_loss, z_prior, z_q_target
+    def get_prior_logits(self, prompts, device):
+        e = self.semantic_encoder(prompts, device)
+        return self.text_prior(e)
+
+    @staticmethod
+    def _top_k_filter(logits, top_k):
+        if top_k is None or top_k <= 0 or top_k >= logits.size(-1):
+            return logits
+        top_values, _ = torch.topk(logits, k=top_k, dim=-1)
+        kth = top_values[..., -1, None]
+        return logits.masked_fill(logits < kth, float("-inf"))
+
+    @staticmethod
+    def _top_p_filter(logits, top_p):
+        if top_p is None or top_p <= 0.0 or top_p >= 1.0:
+            return logits
+        sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+        sorted_probs = torch.softmax(sorted_logits, dim=-1)
+        cum_probs = torch.cumsum(sorted_probs, dim=-1)
+        sorted_mask = cum_probs > top_p
+        sorted_mask[..., 1:] = sorted_mask[..., :-1].clone()
+        sorted_mask[..., 0] = False
+        sorted_logits = sorted_logits.masked_fill(sorted_mask, float("-inf"))
+        filtered_logits = torch.full_like(logits, float("-inf"))
+        filtered_logits.scatter_(dim=-1, index=sorted_indices, src=sorted_logits)
+        return filtered_logits
+
+    def sample_indices_from_logits(self, prior_logits, temperature=1.0, top_k=None, top_p=1.0, deterministic=False):
+        if deterministic:
+            return prior_logits.argmax(dim=-1)
+
+        temperature = max(float(temperature), 1e-6)
+        logits = prior_logits / temperature
+        logits = self._top_k_filter(logits, top_k)
+        logits = self._top_p_filter(logits, top_p)
+
+        invalid_rows = ~torch.isfinite(logits).any(dim=-1)
+        if invalid_rows.any():
+            logits = logits.clone()
+            logits[invalid_rows] = prior_logits[invalid_rows]
+
+        probs = torch.softmax(logits, dim=-1)
+        return torch.multinomial(probs, num_samples=1).squeeze(-1)
+
+    def sample_tokens_from_text(self, prompts, device, temperature=1.0, top_k=None, top_p=1.0, deterministic=False):
+        prior_logits = self.get_prior_logits(prompts, device)
+        indices = self.sample_indices_from_logits(
+            prior_logits=prior_logits,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            deterministic=deterministic,
+        )
+        return indices, prior_logits
+
+    def forward(
+        self,
+        x,
+        prompts=None,
+        s_gt=None,
+        mode="stage1",
+        indices=None,
+        z=None,
+        temperature=1.0,
+        top_k=None,
+        top_p=1.0,
+        deterministic=False,
+    ):
+        device = x.device
+
+        if mode == "stage1":
+            if s_gt is None:
+                raise ValueError("mode='stage1' requires s_gt.")
+            z_q_st, codebook_loss, commitment_loss, indices_gt = self.vq_encoder(x.detach(), s_gt)
+            sdf_pred = self.decode_sdf(x, z_q_st)
+            return sdf_pred, codebook_loss, commitment_loss, indices_gt
+
+        if mode == "stage2":
+            if s_gt is None or prompts is None:
+                raise ValueError("mode='stage2' requires both prompts and s_gt.")
+            with torch.no_grad():
+                indices_gt = self.vq_encoder.get_indices(x.detach(), s_gt)
+            prior_logits = self.get_prior_logits(prompts, device)
+            return prior_logits, indices_gt
+
+        if mode == "decode":
+            if z is None:
+                if indices is None:
+                    raise ValueError("mode='decode' requires either z or indices.")
+                z = self.vq_encoder.vq.get_codebook_entry(indices)
+            return self.decode_sdf(x, z)
+
+        if mode == "infer_text":
+            if prompts is None:
+                raise ValueError("mode='infer_text' requires prompts.")
+            sampled_indices, prior_logits = self.sample_tokens_from_text(
+                prompts=prompts,
+                device=device,
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+                deterministic=deterministic,
+            )
+            cond_z = self.vq_encoder.vq.get_codebook_entry(sampled_indices)
+            sdf_pred = self.decode_sdf(x, cond_z)
+            return sdf_pred, sampled_indices, prior_logits
+
+        raise ValueError(f"Unsupported mode: {mode}")

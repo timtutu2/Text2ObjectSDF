@@ -23,8 +23,10 @@ def main():
 
     model_cfg = config['model']
     infer_cfg = config['inference']
+    version_cfg = config.get('version', {})
 
-    CHECKPOINT_PATH = "checkpoints/model_final.pth"
+    checkpoint_dir = os.path.join("checkpoints", version_cfg.get("name", "default"))
+    CHECKPOINT_PATH = os.path.join(checkpoint_dir, "stage2_model_final.pth")
     PROMPT_FILE     = "test_prompts.txt"
 
     MODELS_DIR = os.path.join("outputs", "models")
@@ -55,7 +57,15 @@ def main():
     ).to(device)
 
     if not os.path.exists(CHECKPOINT_PATH):
-        raise FileNotFoundError(f"Checkpoint not found: {CHECKPOINT_PATH}. Run train.py first.")
+        fallback_stage1 = os.path.join(checkpoint_dir, "stage1_model_final.pth")
+        if os.path.exists(fallback_stage1):
+            CHECKPOINT_PATH = fallback_stage1
+            print(
+                f"Stage2 checkpoint not found. Falling back to stage1 checkpoint: {fallback_stage1} "
+                "(text prior may be untrained)."
+            )
+        else:
+            raise FileNotFoundError(f"Checkpoint not found: {CHECKPOINT_PATH}. Run train.py first.")
 
     checkpoint = torch.load(CHECKPOINT_PATH, map_location=device)
     model.load_state_dict(
@@ -77,12 +87,15 @@ def main():
             resolution=infer_cfg['resolution'],
             chunk_size=infer_cfg['chunk_size'],
             threshold=infer_cfg['threshold'],
-            cfg_scale=infer_cfg.get('cfg_scale', 3.0),
+            temperature=infer_cfg.get('temperature', 1.0),
+            top_k=infer_cfg.get('top_k'),
+            top_p=infer_cfg.get('top_p', 1.0),
+            deterministic=infer_cfg.get('deterministic', False),
         )
 
         if mesh is not None:
             mesh.export(output_path)
-            print(f"✅ Mesh successfully saved to {output_path}")
+            print(f"Mesh successfully saved to {output_path}")
         else:
             print("  Mesh generation failed (empty surface)")
 

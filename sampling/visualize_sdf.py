@@ -3,7 +3,7 @@ from skimage.measure import marching_cubes
 import nrrd
 import trimesh
 
-data = np.load("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/sampling.npz")
+data = np.load("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/sdf_data_5.npz")
 
 data_nrrd, header = nrrd.read("/home/tim/Desktop/UCSD/ECE285/Text2ObjectSDF/sampling/model_4.nrrd")
 
@@ -17,6 +17,8 @@ print(data.files)
 print("spacing:", data["spacing"])
 print("tau:", data["tau"])
 print("sdf_grid shape:", data["sdf_grid"].shape)
+s = data['sdf_clamp']
+print('sdf_clamp min', s.min(), 'max', s.max(), 'frac<0', (s < 0).mean())
 
 ###############################
 # Visualize the data
