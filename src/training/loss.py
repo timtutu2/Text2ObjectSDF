@@ -12,11 +12,12 @@ class Text2ObjectLoss(nn.Module):
     output z_q (stop-gradient).  This closes the train/inference gap — the
     model learns which codebook region maps to a given text description.
     """
-    def __init__(self, truncation_dist=0.1, lambda_codebook=1.0,
+    def __init__(self, truncation_dist=0.1, lambda_sdf=1.0, lambda_codebook=1.0,
                  commitment_cost=0.25, lambda_eik=0.1, lambda_prior=1.0,
                  lambda_far=0.1):
         super().__init__()
         self.tau              = truncation_dist
+        self.lambda_sdf       = lambda_sdf        # weight for truncated SDF loss (try 2–5 if inference SDF is all-positive)
         self.lambda_codebook  = lambda_codebook   # weight for codebook loss
         self.commitment_cost  = commitment_cost   # weight for commitment loss (β in VQ-VAE)
         self.lambda_eik       = lambda_eik
@@ -144,7 +145,7 @@ class Text2ObjectLoss(nn.Module):
     def forward(self, sdf_pred, sdf_gt, codebook_loss, commitment_loss, points,
                 z_prior=None, z_q_target=None):
         """
-        Total loss: L = L_sdf + L_vq + lambda_eik * L_eik + lambda_prior * L_prior.
+        Total loss: L = lambda_sdf*L_sdf + L_vq + lambda_eik*L_eik + lambda_prior*L_prior + lambda_far*L_far.
 
         z_prior    — text_prior(e) prediction  (None at inference, skips L_prior)
         z_q_target — stop-gradient VQ target   (None at inference)
@@ -162,7 +163,7 @@ class Text2ObjectLoss(nn.Module):
 
         l_far = self.compute_far_loss(sdf_pred_safe, sdf_gt)
 
-        total_loss = (l_sdf
+        total_loss = (self.lambda_sdf   * l_sdf
                       + l_vq
                       + self.lambda_eik   * l_eik
                       + self.lambda_prior * l_prior

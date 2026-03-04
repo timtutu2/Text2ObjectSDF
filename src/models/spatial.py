@@ -19,6 +19,9 @@ class SpatialEncoder(nn.Module):
         self.output_dim = self.encoder.n_output_dims
 
     def forward(self, x):
+        # Input coords are in [-0.5, 0.5]^3 (meshing + training data). Remap to [0, 1]
+        # so the HashGrid sees the full volume; tcnn HashGrid expects [0, 1].
+        x = x * 0.5 + 0.5
         x = torch.clamp(x, 0.0, 1.0)
         x = x.contiguous().float()
         # tcnn HashGrid always outputs fp16 on CUDA; cast back to fp32 so

@@ -174,6 +174,7 @@ def main():
 
     criterion = Text2ObjectLoss(
         truncation_dist=loss_cfg['truncation_dist'],
+        lambda_sdf=loss_cfg.get('lambda_sdf', 1.0),
         lambda_codebook=loss_cfg.get('lambda_codebook', 1.0),
         commitment_cost=loss_cfg.get('commitment_cost', 0.25),
         lambda_eik=loss_cfg['lambda_eik'],
