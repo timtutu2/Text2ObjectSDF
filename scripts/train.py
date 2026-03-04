@@ -138,7 +138,7 @@ def main():
         processed_dir2="/mnt/tim/data/ShapeNetCore/03001627_sdf",
         captions_file=str(PROJECT_ROOT / "src" / "data" / "captions_clip77.json"),
         num_points_per_batch=train_cfg['points_per_batch'],
-        max_models=4000,
+        max_models=10000,
     )
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True) if use_distributed else None
     dataloader = DataLoader(
