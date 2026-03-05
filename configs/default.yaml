@@ -30,9 +30,9 @@ model:
 # If SDF at inference is always positive (no zero-crossing), try num_epochs: 200–300.
 training:
   stage: "stage1"          # "stage1": train shape VQ+decoder, "stage2": train text prior only.
-  batch_size: 64
+  batch_size: 32
   num_workers: 8
-  num_epochs: 800
+  num_epochs: 800   #default 
   num_epochs_stage1: 800
   num_epochs_stage2: 200
   learning_rate: 0.0005
