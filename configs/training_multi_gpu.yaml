@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: textsdf-training-two-stage-job
+  name: textsdf-training-two-stage-stage1-job
 spec:
   backoffLimit: 2  # Retry up to 2 times if the job fails
   ttlSecondsAfterFinished: 86400  # Auto-delete job after 24 hours of completion
   template:
     metadata:
       labels:
-        app: textsdf-training-two-stage-job
+        app: textsdf-training-two-stage-stage1-job
     spec:
       containers:
       - name: gpu-container
