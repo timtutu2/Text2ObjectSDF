@@ -17,7 +17,6 @@ sys.path.insert(0, project_root_str)
 
 from src.data.dataset import Text2ObjectDataset
 import src.models.semantic as semantic_mod
-import src.models.network as network_mod
 
 class DummySemanticEncoder(nn.Module):
     def __init__(self, text_embed_dim=512):
@@ -31,6 +30,7 @@ class DummySemanticEncoder(nn.Module):
 
 semantic_mod.SemanticEncoder = DummySemanticEncoder
 
+import src.models.network as network_mod
 from src.models.network import Text2ObjectNetwork
 
 def parse_args():
@@ -105,9 +105,8 @@ def main():
 
         # Only run VQ encoder to get code indices.
         out = model.vq_encoder(x, s)
-        indices = out[-1]  # (1,) or (1,T)
-        if indices.ndim == 2:
-            indices = indices.view(-1)
+        indices = out[-1]               # (B,) or (B,T)
+        indices = indices.reshape(-1)   # flatten tokens for global usage stats
         counter.update(indices.detach().cpu().tolist())
 
     total = sum(counter.values())

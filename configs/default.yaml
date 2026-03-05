@@ -15,10 +15,11 @@ version:
 model:
   text_embed_dim: 512       # CLIP ViT-B/32 output dimension.
   latent_dim: 128           # VAE latent space dimension (z).
+  num_tokens: 8             # Shape token count T.
   hidden_dim: 256           # FiLM decoder hidden layer width.
   num_layers: 4             # Number of FiLM decoder layers.
 
-  num_embeddings: 512       # VQ codebook size.
+  num_embeddings: 128       # VQ codebook size K.
 
   hashgrid:
     n_levels: 16

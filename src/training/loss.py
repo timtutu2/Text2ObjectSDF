@@ -94,12 +94,21 @@ class Text2ObjectLoss(nn.Module):
           commitment_loss = ||z_e - sg[e_k]||^2  — moves encoder output toward codebook
         Both are already scalar tensors produced inside VectorQuantizer.
         """
-        return self.lambda_codebook * codebook_loss + self.commitment_cost * commitment_loss
+        return self.lambda_codebook * (codebook_loss + self.commitment_cost * commitment_loss)
 
     def compute_prior_loss(self, prior_logits, target_indices):
         """
         Prior classification loss over codebook indices.
         """
+        # prior_logits: (B, T, K), target_indices: (B, T)
+        if prior_logits.dim() == 3 and target_indices.dim() == 2:
+            bsz, num_tokens, num_embeddings = prior_logits.shape
+            per_token = F.cross_entropy(
+                prior_logits.reshape(bsz * num_tokens, num_embeddings),
+                target_indices.long().reshape(bsz * num_tokens),
+                reduction="none",
+            ).view(bsz, num_tokens)
+            return per_token.sum(dim=1).mean()
         return F.cross_entropy(prior_logits, target_indices.long())
 
     def compute_eikonal_loss(self, sdf_pred, points):

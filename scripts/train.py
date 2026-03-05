@@ -119,6 +119,7 @@ def configure_stage(model, stage):
 
     if stage == "stage2":
         # Stage 2: freeze shape VQ and decoder, train text prior only.
+        # Note: leaving decoder trainable with prior-only loss would create unused params.
         set_requires_grad(model.vq_encoder, False)
         set_requires_grad(model.spatial_encoder, False)
         set_requires_grad(model.decoder_layers, False)
@@ -241,7 +242,8 @@ def main():
         latent_dim=model_cfg["latent_dim"],
         hidden_dim=model_cfg["hidden_dim"],
         num_layers=model_cfg["num_layers"],
-        num_embeddings=model_cfg.get("num_embeddings", 512),
+        num_embeddings=model_cfg.get("num_embeddings", 128),
+        num_tokens=model_cfg.get("num_tokens", 8),
         hashgrid=model_cfg.get("hashgrid"),
     ).to(device)
 
@@ -347,15 +349,38 @@ def main():
                     sdf_pred, codebook_loss, commitment_loss, _ = sdf_decoder(
                         points, s_gt=sdf_gt, mode="stage1"
                     )
-                    loss, loss_dict = criterion(
-                        sdf_pred, sdf_gt, codebook_loss, commitment_loss, points
+                    loss_sdf = criterion.compute_sdf_loss(sdf_pred, sdf_gt)
+                    loss_vq = criterion.lambda_codebook * (
+                        codebook_loss + criterion.commitment_cost * commitment_loss
                     )
+                    sdf_pred_safe = torch.nan_to_num(
+                        sdf_pred,
+                        nan=0.0,
+                        posinf=criterion.tau,
+                        neginf=-criterion.tau,
+                    )
+                    loss_eik = criterion.compute_eikonal_loss(sdf_pred_safe, points)
+                    loss = loss_sdf + loss_vq + (criterion.lambda_eik * loss_eik)
+                    loss_dict = {
+                        "loss_sdf": loss_sdf.item(),
+                        "loss_vq": loss_vq.item(),
+                        "loss_eik": loss_eik.item(),
+                        "loss_prior": 0.0,
+                        "loss_far": 0.0,
+                    }
                 else:
                     prior_logits, indices_gt = sdf_decoder(
                         points, prompts=prompts, s_gt=sdf_gt, mode="stage2"
                     )
-                    prior_loss = F.cross_entropy(prior_logits, indices_gt.long())
-                    loss = prior_loss
+                    # prior_logits: (B, T, K), indices_gt: (B, T)
+                    bsz, num_tokens, num_embeddings = prior_logits.shape
+                    per_token_ce = F.cross_entropy(
+                        prior_logits.reshape(bsz * num_tokens, num_embeddings),  # (B*T, K)
+                        indices_gt.long().reshape(bsz * num_tokens),             # (B*T,)
+                        reduction="none",
+                    ).view(bsz, num_tokens)                                       # (B, T)
+                    prior_loss = per_token_ce.sum(dim=1).mean()                   # mean_B sum_T CE
+                    loss = criterion.lambda_prior * prior_loss
                     loss_dict = {
                         "loss_sdf": 0.0,
                         "loss_vq": 0.0,

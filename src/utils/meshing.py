@@ -30,7 +30,7 @@ def generate_mesh_from_model(
     sdf_values = []
 
     # Text-only generation path:
-    # text -> CLIP -> prior logits -> sampled token index -> codebook embedding.
+    # text -> CLIP -> prior logits (B,T,K) -> sampled indices (B,T) -> codebook (B,T,D) -> z_agg (B,D).
     with torch.no_grad():
         token_indices, prior_logits = model.sample_tokens_from_text(
             prompts=prompt,
@@ -40,11 +40,12 @@ def generate_mesh_from_model(
             top_p=top_p,
             deterministic=deterministic,
         )
-        z_cond = model.vq_encoder.vq.get_codebook_entry(token_indices)
-        probs = torch.softmax(prior_logits, dim=-1)
-        confidence = probs.gather(-1, token_indices.unsqueeze(-1)).mean().item()
+        z_tokens = model.lookup_tokens(token_indices)              # (B, T, D)
+        z_cond = model.aggregate_shape_tokens(z_tokens)            # (B, D)
+        probs = torch.softmax(prior_logits, dim=-1)                # (B, T, K)
+        confidence = probs.gather(-1, token_indices.unsqueeze(-1)).mean().item()  # scalar
         print(
-            f"Sampled token index: {token_indices.tolist()} | "
+            f"Sampled token indices: {token_indices.tolist()} | "
             f"avg token prob: {confidence:.4f}"
         )
 

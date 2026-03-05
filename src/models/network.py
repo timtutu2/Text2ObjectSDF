@@ -11,10 +11,20 @@ class Text2ObjectNetwork(nn.Module):
       2) Text prior predicts token distribution p(k|text).
       3) HashGrid + FiLM decoder predicts SDF conditioned only on token embedding.
     """
-    def __init__(self, text_embed_dim=512, latent_dim=128, hidden_dim=256, num_layers=4, num_embeddings=512, hashgrid=None):
+    def __init__(
+        self,
+        text_embed_dim=512,
+        latent_dim=128,
+        hidden_dim=256,
+        num_layers=4,
+        num_embeddings=512,
+        num_tokens=8,
+        hashgrid=None,
+    ):
         super().__init__()
         self.latent_dim = latent_dim
         self.num_embeddings = num_embeddings
+        self.num_tokens = num_tokens
 
         hg = hashgrid or {}
         self.spatial_encoder = SpatialEncoder(
@@ -26,8 +36,16 @@ class Text2ObjectNetwork(nn.Module):
         spatial_dim = self.spatial_encoder.output_dim
 
         self.semantic_encoder = SemanticEncoder()
-        self.vq_encoder = ShapeVQEncoder(latent_dim=latent_dim, num_embeddings=num_embeddings)
-        self.text_prior = TextPrior(text_embed_dim=text_embed_dim, num_embeddings=num_embeddings)
+        self.vq_encoder = ShapeVQEncoder(
+            latent_dim=latent_dim,
+            num_embeddings=num_embeddings,
+            num_tokens=num_tokens,
+        )
+        self.text_prior = TextPrior(
+            text_embed_dim=text_embed_dim,
+            num_tokens=num_tokens,
+            num_embeddings=num_embeddings,
+        )
 
         self.condition_dim = latent_dim
         self.decoder_layers = nn.ModuleList()
@@ -41,20 +59,35 @@ class Text2ObjectNetwork(nn.Module):
         nn.init.xavier_uniform_(self.output_layer.weight, gain=0.1)
         nn.init.zeros_(self.output_layer.bias)
 
+    def aggregate_shape_tokens(self, z_tokens):
+        # z_tokens: (B, D) or (B, T, D)
+        if z_tokens.dim() == 2:
+            return z_tokens  # (B, D)
+        if z_tokens.dim() == 3:
+            return z_tokens.mean(dim=1)  # (B, D)
+        raise ValueError(f"Expected z_tokens with shape (B,D) or (B,T,D), got {tuple(z_tokens.shape)}")
+
+    def lookup_tokens(self, indices):
+        # indices: (B,) or (B, T)
+        return self.vq_encoder.vq.get_codebook_entry(indices)
+
     def decode_sdf(self, x, cond_z):
+        # x: (B, N, 3)
+        # cond_z: (B, D) or (B, T, D) -> cond_vec: (B, D)
+        cond_vec = self.aggregate_shape_tokens(cond_z)
         batch_size, n_points, _ = x.shape
         x_flat = x.view(-1, 3)
         h = self.spatial_encoder(x_flat)
         h = h.view(batch_size, n_points, -1)
 
         for layer in self.decoder_layers:
-            h = layer(h, cond_z)
+            h = layer(h, cond_vec)
 
         return self.output_layer(h).squeeze(-1)
 
     def get_prior_logits(self, prompts, device):
         e = self.semantic_encoder(prompts, device)
-        return self.text_prior(e)
+        return self.text_prior(e)  # (B, T, K)
 
     @staticmethod
     def _top_k_filter(logits, top_k):
@@ -80,8 +113,9 @@ class Text2ObjectNetwork(nn.Module):
         return filtered_logits
 
     def sample_indices_from_logits(self, prior_logits, temperature=1.0, top_k=None, top_p=1.0, deterministic=False):
+        # prior_logits: (B, T, K)
         if deterministic:
-            return prior_logits.argmax(dim=-1)
+            return prior_logits.argmax(dim=-1)  # (B, T)
 
         temperature = max(float(temperature), 1e-6)
         logits = prior_logits / temperature
@@ -94,7 +128,7 @@ class Text2ObjectNetwork(nn.Module):
             logits[invalid_rows] = prior_logits[invalid_rows]
 
         probs = torch.softmax(logits, dim=-1)
-        return torch.multinomial(probs, num_samples=1).squeeze(-1)
+        return torch.multinomial(probs.reshape(-1, probs.size(-1)), num_samples=1).view(*probs.shape[:-1])
 
     def sample_tokens_from_text(self, prompts, device, temperature=1.0, top_k=None, top_p=1.0, deterministic=False):
         prior_logits = self.get_prior_logits(prompts, device)
@@ -125,7 +159,8 @@ class Text2ObjectNetwork(nn.Module):
         if mode == "stage1":
             if s_gt is None:
                 raise ValueError("mode='stage1' requires s_gt.")
-            z_q_st, codebook_loss, commitment_loss, indices_gt = self.vq_encoder(x.detach(), s_gt)
+            # z_q_st: (B, T, D), z_e: (B, T, D), indices_gt: (B, T)
+            z_q_st, _, codebook_loss, commitment_loss, indices_gt = self.vq_encoder(x.detach(), s_gt)
             sdf_pred = self.decode_sdf(x, z_q_st)
             return sdf_pred, codebook_loss, commitment_loss, indices_gt
 
@@ -133,15 +168,15 @@ class Text2ObjectNetwork(nn.Module):
             if s_gt is None or prompts is None:
                 raise ValueError("mode='stage2' requires both prompts and s_gt.")
             with torch.no_grad():
-                indices_gt = self.vq_encoder.get_indices(x.detach(), s_gt)
-            prior_logits = self.get_prior_logits(prompts, device)
+                indices_gt = self.vq_encoder.get_indices(x.detach(), s_gt)  # (B, T)
+            prior_logits = self.get_prior_logits(prompts, device)  # (B, T, K)
             return prior_logits, indices_gt
 
         if mode == "decode":
             if z is None:
                 if indices is None:
                     raise ValueError("mode='decode' requires either z or indices.")
-                z = self.vq_encoder.vq.get_codebook_entry(indices)
+                z = self.lookup_tokens(indices)
             return self.decode_sdf(x, z)
 
         if mode == "infer_text":
@@ -155,8 +190,8 @@ class Text2ObjectNetwork(nn.Module):
                 top_p=top_p,
                 deterministic=deterministic,
             )
-            cond_z = self.vq_encoder.vq.get_codebook_entry(sampled_indices)
-            sdf_pred = self.decode_sdf(x, cond_z)
+            z_tokens = self.lookup_tokens(sampled_indices)  # (B, T, D)
+            sdf_pred = self.decode_sdf(x, z_tokens)
             return sdf_pred, sampled_indices, prior_logits
 
         raise ValueError(f"Unsupported mode: {mode}")
