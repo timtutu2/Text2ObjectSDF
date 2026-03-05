@@ -1,10 +1,26 @@
 import torch
+import torch.nn as nn
 from collections import Counter
 from pathlib import Path
 import yaml
 import sys
-from src.models.network import Text2ObjectNetwork
+
 from src.data.dataset import Text2ObjectDataset
+import src.models.semantic as semantic_mod
+
+class DummySemanticEncoder(nn.Module):
+    def __init__(self, text_embed_dim=512):
+        super().__init__()
+        self.text_embed_dim = text_embed_dim
+
+    def forward(self, prompts, device):
+        # return zeros; codebook usage test won't use it anyway
+        b = len(prompts) if prompts is not None else 1
+        return torch.zeros((b, self.text_embed_dim), device=device)
+
+semantic_mod.SemanticEncoder = DummySemanticEncoder
+
+from src.models.network import Text2ObjectNetwork
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
