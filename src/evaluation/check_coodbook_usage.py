@@ -38,8 +38,8 @@ def main():
 
     model = Text2ObjectNetwork(**model_cfg).to(device)
     state = torch.load(ckpt, map_location="cpu")
-    model.load_state_dict(state["model"] if "model" in state else state)
-    model.eval()
+    sd = state.get("model_state_dict", state.get("model", state))
+    model.load_state_dict(sd, strict=False)
 
     ds = Text2ObjectDataset(
         processed_dir1="/mnt/tim/data/ShapeNetCore/voxel_256_filter_div_128_solid_2",
