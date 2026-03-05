@@ -245,6 +245,13 @@ def main():
         hashgrid=model_cfg.get("hashgrid"),
     ).to(device)
 
+    # IMPORTANT: freeze/unfreeze parameters before wrapping with DDP.
+    # DDP expects a stable set of trainable params; changing requires_grad
+    # after DDP construction can trigger "Expected to have finished reduction"
+    # when some params stop receiving gradients (e.g., stage-specific branches).
+    configure_stage(sdf_decoder, stage)
+
+    model_without_ddp = sdf_decoder
     if use_distributed:
         sdf_decoder = torch.nn.parallel.DistributedDataParallel(
             sdf_decoder,
@@ -252,9 +259,7 @@ def main():
             output_device=local_rank,
             gradient_as_bucket_view=True,
         )
-    model_without_ddp = sdf_decoder.module if use_distributed else sdf_decoder
-
-    configure_stage(model_without_ddp, stage)
+        model_without_ddp = sdf_decoder.module
 
     trainable_params = [p for p in model_without_ddp.parameters() if p.requires_grad]
     if not trainable_params:
