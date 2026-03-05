@@ -1,12 +1,23 @@
-import torch
-import torch.nn as nn
+import argparse
+import inspect
+import sys
 from collections import Counter
 from pathlib import Path
+
+import torch
+import torch.nn as nn
 import yaml
-import sys
+
+# Ensure local repo root takes precedence over image-level PYTHONPATH entries (e.g. /app).
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+project_root_str = str(PROJECT_ROOT)
+if project_root_str in sys.path:
+    sys.path.remove(project_root_str)
+sys.path.insert(0, project_root_str)
 
 from src.data.dataset import Text2ObjectDataset
 import src.models.semantic as semantic_mod
+import src.models.network as network_mod
 
 class DummySemanticEncoder(nn.Module):
     def __init__(self, text_embed_dim=512):
@@ -22,23 +33,56 @@ semantic_mod.SemanticEncoder = DummySemanticEncoder
 
 from src.models.network import Text2ObjectNetwork
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+def parse_args():
+    parser = argparse.ArgumentParser(description="Check VQ codebook usage from a trained checkpoint.")
+    parser.add_argument(
+        "--ckpt",
+        type=Path,
+        default=Path("/mnt/tim/text2objectsdf/checkpoints/10000_two_stage_training_stage1/stage1_model_final.pth"),
+        help="Checkpoint path.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=PROJECT_ROOT / "configs" / "default.yaml",
+        help="Config YAML path.",
+    )
+    parser.add_argument("--device", type=str, default="cuda", help="Device: cuda or cpu.")
+    return parser.parse_args()
+
+
+def get_model_state_dict(state):
+    if isinstance(state, dict):
+        for key in ("model_state_dict", "model", "state_dict"):
+            maybe_sd = state.get(key)
+            if isinstance(maybe_sd, dict):
+                state = maybe_sd
+                break
+
+    if not isinstance(state, dict):
+        raise TypeError("Unsupported checkpoint format: expected a state_dict-like mapping.")
+
+    # Support DDP checkpoints saved as "module.*"
+    if any(k.startswith("module.") for k in state.keys()):
+        return {k.removeprefix("module."): v for k, v in state.items()}
+    return state
 
 @torch.no_grad()
 def main():
-    ckpt = "/mnt/tim/text2objectsdf/checkpoints/10000_two_stage_training_stage1/stage1_model_final.pth" 
-    cfg_path = "configs/default.yaml"
-    device = "cuda"
+    args = parse_args()
+    ckpt = args.ckpt
+    cfg_path = args.config
+    device = args.device
 
-    cfg = yaml.safe_load(open(cfg_path, "r"))
+    with open(cfg_path, "r") as f:
+        cfg = yaml.safe_load(f)
     model_cfg = cfg["model"]
     train_cfg = cfg["training"]
 
     model = Text2ObjectNetwork(**model_cfg).to(device)
     state = torch.load(ckpt, map_location="cpu")
-    sd = state.get("model_state_dict", state.get("model", state))
+    sd = get_model_state_dict(state)
+    print(f"Using Text2ObjectNetwork from: {Path(inspect.getfile(network_mod)).resolve()}")
     model.load_state_dict(sd, strict=False)
 
     ds = Text2ObjectDataset(
