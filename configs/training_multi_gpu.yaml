@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: textsdf-training-two-stage-stage1-job
+  name: textsdf-training-two-stage-stage2-job
 spec:
   backoffLimit: 2  # Retry up to 2 times if the job fails
   ttlSecondsAfterFinished: 86400  # Auto-delete job after 24 hours of completion
   template:
     metadata:
       labels:
-        app: textsdf-training-two-stage-stage1-job
+        app: textsdf-training-two-stage-stage2-job
     spec:
       containers:
       - name: gpu-container
@@ -33,7 +33,9 @@ spec:
           LOGFILE=logs/text2object_$(date +%Y%m%d_%H%M%S).log && \
           echo \"Saving logs to $LOGFILE\" && \
           torchrun --standalone --nnodes=1 --nproc_per_node=4 scripts/train.py \
-            --config configs/default.yaml 2>&1 | tee $LOGFILE && \
+            --config configs/default.yaml
+            --stage stage2 \
+            --resume /mnt/tim/text2objectsdf/checkpoints/10000_two_stage_training_stage1/stage1_model_epoch_600.pth 2>&1 | tee $LOGFILE && \
           echo \"Training completed. Logs saved to $LOGFILE\""
         ]
         env:
