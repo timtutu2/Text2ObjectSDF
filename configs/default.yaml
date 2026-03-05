@@ -9,7 +9,7 @@ logging:
   wandb_enabled: true   # Set WANDB_API_KEY in env (e.g. K8s secret) to log to wandb
 
 version:
-  name: "10000_two_stage_training_stage2"
+  name: "10000_two_stage_training_multi_token_stage1"
 
 # 1. Network Architecture
 model:
