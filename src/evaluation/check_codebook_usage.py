@@ -72,7 +72,11 @@ def main():
     args = parse_args()
     ckpt = args.ckpt
     cfg_path = args.config
-    device = args.device
+    if args.device == "cuda" and not torch.cuda.is_available():
+        print("CUDA not available, falling back to CPU.")
+        device = "cpu"
+    else:
+        device = args.device
 
     with open(cfg_path, "r") as f:
         cfg = yaml.safe_load(f)
@@ -95,13 +99,12 @@ def main():
 
     counter = Counter()
     for i in range(n_eval):
-        batch = ds[i]
-        x = batch["x"].unsqueeze(0).to(device)         # (1,N,3)
-        s = batch["sdf"].unsqueeze(0).to(device)       # (1,N)
+        x, s, _ = ds[i]                                # dataset returns (points, sdf, prompt)
+        x = x.unsqueeze(0).to(device)                  # (1,N,3)
+        s = s.unsqueeze(0).to(device)                  # (1,N)
 
-        # 只跑 VQ encoder 拿 indices
-        out = model.vq_encoder(x, s)  # 如果你還有e，改成 model.vq_encoder(x, s, e_dummy)
-        # out 依你實作： (z_q_st, z_e, codebook_loss, commit_loss, indices)
+        # Only run VQ encoder to get code indices.
+        out = model.vq_encoder(x, s)
         indices = out[-1]  # (1,) or (1,T)
         if indices.ndim == 2:
             indices = indices.view(-1)
