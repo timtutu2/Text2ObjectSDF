@@ -33,9 +33,9 @@ spec:
           LOGFILE=logs/text2object_$(date +%Y%m%d_%H%M%S).log && \
           echo \"Saving logs to $LOGFILE\" && \
           torchrun --standalone --nnodes=1 --nproc_per_node=4 scripts/train.py \
-            --config configs/default.yaml 
-            --stage stage2
-            --resume /mnt/tim/text2objectsdf/checkpoints/10000_two_stage_training_multi_token_stage1_v3/stage1_model_epoch_350.pth 2>&1 | tee $LOGFILE && \
+            --config configs/default.yaml \
+            --stage stage2 \
+            --resume /mnt/tim/text2objectsdf/checkpoints/10000_two_stage_training_multi_token_stage1_v3/stage1_model_epoch_450.pth 2>&1 | tee $LOGFILE && \
           echo \"Training completed. Logs saved to $LOGFILE\""
         ]
         env:
@@ -77,6 +77,7 @@ spec:
               - key: kubernetes.io/hostname
                 operator: NotIn
                 values:
+                - "k8s-gpu-01.calit2.optiputer.net"
                 - "k8s-haosu-04.sdsc.optiputer.net"
                 - "k8s-haosu-22.sdsc.optiputer.net"
                 - "ry-gpu-14.sdsc.optiputer.net"

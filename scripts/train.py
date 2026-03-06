@@ -125,6 +125,7 @@ def configure_stage(model, stage):
     if stage == "stage1":
         # Stage 1: shape VQ + decoder only.
         set_requires_grad(model.vq_encoder, True)
+        set_requires_grad(model.token_aggregator, True)
         set_requires_grad(model.text_prior, False)
         set_requires_grad(model.spatial_encoder, True)
         set_requires_grad(model.decoder_layers, True)
@@ -135,6 +136,7 @@ def configure_stage(model, stage):
         # Stage 2: freeze shape VQ and decoder, train text prior only.
         # Note: leaving decoder trainable with prior-only loss would create unused params.
         set_requires_grad(model.vq_encoder, False)
+        set_requires_grad(model.token_aggregator, False)
         set_requires_grad(model.spatial_encoder, False)
         set_requires_grad(model.decoder_layers, False)
         set_requires_grad(model.output_layer, False)

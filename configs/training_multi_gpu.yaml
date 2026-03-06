@@ -33,7 +33,7 @@ spec:
           LOGFILE=logs/text2object_$(date +%Y%m%d_%H%M%S).log && \
           echo \"Saving logs to $LOGFILE\" && \
           torchrun --standalone --nnodes=1 --nproc_per_node=4 scripts/train.py \
-            --config configs/default.yaml
+            --config configs/default.yaml \
             --stage stage1  2>&1 | tee $LOGFILE && \
           echo \"Training completed. Logs saved to $LOGFILE\""
         ]
