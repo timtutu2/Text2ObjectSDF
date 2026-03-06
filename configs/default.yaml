@@ -40,6 +40,7 @@ training:
   points_per_batch: 4096
   save_interval: 50
   grad_accum_steps: 8
+  vq_warmup_epochs: 80      # Ramp VQ regularization to reduce early codebook collapse.
   warmup_epochs: 160        # Phase 1: linear ramp from ~0 → lr.
   stable_epochs: 300        # Phase 2: constant at lr  (800-100-300 = 400 decay epochs).
   amp: false
@@ -50,6 +51,7 @@ loss:
   lambda_sdf: 5.0            # Weight for truncated SDF loss. Try 2–5 if inference SDF is all-positive.
   lambda_codebook: 1.0       # Weight for VQ codebook loss (moves codebook → encoder).
   commitment_cost: 0.25     # Weight for commitment loss β (moves encoder → codebook).
+  lambda_usage: 0.02        # Code usage entropy-gap penalty (encourages broader codebook usage).
   lambda_eik: 0.01          # Eikonal regularization weight.
   lambda_prior: 1.0         # Stage2 prior CE weight (if used in combined loss wrappers).
   lambda_far: 0.1           # Weight for far-field SDF loss (|sdf_gt| > τ region).

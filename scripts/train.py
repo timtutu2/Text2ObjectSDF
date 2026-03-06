@@ -104,6 +104,20 @@ def set_requires_grad(module, requires_grad):
         param.requires_grad = requires_grad
 
 
+def compute_usage_entropy_gap(indices, num_embeddings, eps=1e-8):
+    """
+    Entropy gap in [0, 1]:
+      0 -> uniform code usage
+      1 -> fully collapsed to one/few codes
+    """
+    flat_indices = indices.reshape(-1).long()  # (B*T,)
+    counts = torch.bincount(flat_indices, minlength=num_embeddings).float()  # (K,)
+    probs = counts / counts.sum().clamp_min(1.0)
+    entropy = -(probs * torch.log(probs + eps)).sum()
+    max_entropy = math.log(max(int(num_embeddings), 2))
+    return (max_entropy - entropy) / max(max_entropy, eps)
+
+
 def configure_stage(model, stage):
     # CLIP stays frozen in both stages.
     set_requires_grad(model.semantic_encoder, False)
@@ -187,6 +201,7 @@ def main():
 
     num_epochs = int(train_cfg.get(f"num_epochs_{stage}", train_cfg.get("num_epochs", 1)))
     grad_accum_steps = int(train_cfg.get("grad_accum_steps", 1))
+    vq_warmup_epochs = int(train_cfg.get("vq_warmup_epochs", 50))
 
     checkpoints_dir = PROJECT_ROOT / "checkpoints" / version_cfg.get("name", "default")
     if is_main_process:
@@ -276,6 +291,7 @@ def main():
         lambda_prior=loss_cfg.get("lambda_prior", 1.0),
         lambda_far=loss_cfg.get("lambda_far", 0.1),
     ).to(device)
+    lambda_usage = float(loss_cfg.get("lambda_usage", 0.0))
 
     optimizer = torch.optim.Adam(trainable_params, lr=train_cfg["learning_rate"])
     scheduler = build_scheduler(optimizer, train_cfg, num_epochs, stage, is_main_process)
@@ -346,13 +362,22 @@ def main():
             loss_finite = False
             with sync_context:
                 if stage == "stage1":
-                    sdf_pred, codebook_loss, commitment_loss, _ = sdf_decoder(
+                    sdf_pred, codebook_loss, commitment_loss, indices_gt = sdf_decoder(
                         points, s_gt=sdf_gt, mode="stage1"
                     )
                     loss_sdf = criterion.compute_sdf_loss(sdf_pred, sdf_gt)
-                    loss_vq = criterion.lambda_codebook * (
+                    if vq_warmup_epochs <= 0:
+                        vq_scale = 1.0
+                    else:
+                        vq_scale = min(1.0, float(epoch + 1) / float(vq_warmup_epochs))
+                    loss_vq = vq_scale * criterion.lambda_codebook * (
                         codebook_loss + criterion.commitment_cost * commitment_loss
                     )
+                    usage_gap = compute_usage_entropy_gap(
+                        indices_gt,
+                        num_embeddings=model_without_ddp.num_embeddings,
+                    )
+                    loss_usage = lambda_usage * usage_gap
                     sdf_pred_safe = torch.nan_to_num(
                         sdf_pred,
                         nan=0.0,
@@ -360,10 +385,16 @@ def main():
                         neginf=-criterion.tau,
                     )
                     loss_eik = criterion.compute_eikonal_loss(sdf_pred_safe, points)
-                    loss = loss_sdf + loss_vq + (criterion.lambda_eik * loss_eik)
+                    loss = (
+                        criterion.lambda_sdf * loss_sdf
+                        + loss_vq
+                        + loss_usage
+                        + (criterion.lambda_eik * loss_eik)
+                    )
                     loss_dict = {
                         "loss_sdf": loss_sdf.item(),
                         "loss_vq": loss_vq.item(),
+                        "loss_usage": loss_usage.item(),
                         "loss_eik": loss_eik.item(),
                         "loss_prior": 0.0,
                         "loss_far": 0.0,
@@ -384,6 +415,7 @@ def main():
                     loss_dict = {
                         "loss_sdf": 0.0,
                         "loss_vq": 0.0,
+                        "loss_usage": 0.0,
                         "loss_eik": 0.0,
                         "loss_prior": prior_loss.item(),
                         "loss_far": 0.0,
@@ -413,6 +445,7 @@ def main():
                 reduced_total = all_reduce_mean(loss.detach(), world_size, use_distributed)
                 reduced_sdf = all_reduce_mean(torch.tensor(loss_dict["loss_sdf"], device=device), world_size, use_distributed)
                 reduced_vq = all_reduce_mean(torch.tensor(loss_dict["loss_vq"], device=device), world_size, use_distributed)
+                reduced_usage = all_reduce_mean(torch.tensor(loss_dict["loss_usage"], device=device), world_size, use_distributed)
                 reduced_eik = all_reduce_mean(torch.tensor(loss_dict["loss_eik"], device=device), world_size, use_distributed)
                 reduced_prior = all_reduce_mean(torch.tensor(loss_dict["loss_prior"], device=device), world_size, use_distributed)
                 reduced_far = all_reduce_mean(torch.tensor(loss_dict["loss_far"], device=device), world_size, use_distributed)
@@ -427,6 +460,7 @@ def main():
                         log_data.update({
                             "Loss/SDF": reduced_sdf.item(),
                             "Loss/VQ": reduced_vq.item(),
+                            "Loss/Usage": reduced_usage.item(),
                             "Loss/Eikonal": reduced_eik.item(),
                             "Loss/FarField": reduced_far.item(),
                         })
@@ -438,6 +472,7 @@ def main():
                         print(
                             f"[WARNING] NaN loss at step {global_step}. "
                             f"SDF={loss_dict['loss_sdf']:.4f} VQ={loss_dict['loss_vq']:.4f} "
+                            f"Usage={loss_dict['loss_usage']:.4f} "
                             f"Eik={loss_dict['loss_eik']:.4f} Prior={loss_dict['loss_prior']:.4f}."
                         )
                     elif global_step % 50 == 0:

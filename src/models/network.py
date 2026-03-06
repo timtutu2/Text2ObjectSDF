@@ -46,6 +46,12 @@ class Text2ObjectNetwork(nn.Module):
             num_tokens=num_tokens,
             num_embeddings=num_embeddings,
         )
+        # Order-aware token aggregator: (B, T, D) -> (B, D).
+        self.token_aggregator = nn.Sequential(
+            nn.Linear(num_tokens * latent_dim, latent_dim),
+            nn.SiLU(),
+            nn.Linear(latent_dim, latent_dim),
+        )
 
         self.condition_dim = latent_dim
         self.decoder_layers = nn.ModuleList()
@@ -64,7 +70,12 @@ class Text2ObjectNetwork(nn.Module):
         if z_tokens.dim() == 2:
             return z_tokens  # (B, D)
         if z_tokens.dim() == 3:
-            return z_tokens.mean(dim=1)  # (B, D)
+            if z_tokens.size(1) != self.num_tokens or z_tokens.size(2) != self.latent_dim:
+                raise ValueError(
+                    f"Expected z_tokens shape (B,{self.num_tokens},{self.latent_dim}), got {tuple(z_tokens.shape)}"
+                )
+            flat_tokens = z_tokens.reshape(z_tokens.size(0), self.num_tokens * self.latent_dim)  # (B, T*D)
+            return self.token_aggregator(flat_tokens)  # (B, D)
         raise ValueError(f"Expected z_tokens with shape (B,D) or (B,T,D), got {tuple(z_tokens.shape)}")
 
     def lookup_tokens(self, indices):

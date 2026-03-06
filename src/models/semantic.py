@@ -86,9 +86,10 @@ class VectorQuantizer(nn.Module):
         flat_indices = self._compute_indices(flat_z_e)  # (M,)
         flat_z_q = self.codebook(flat_indices)  # (M, D)
 
-        # Average over tokens (M = B or B*T), not over token count weighted by shape rank.
-        codebook_loss = (flat_z_q - flat_z_e.detach()).pow(2).sum(dim=-1).mean()
-        commitment_loss = (flat_z_e - flat_z_q.detach()).pow(2).sum(dim=-1).mean()
+        # Average over all elements (M*D). This is equivalent to token-wise averaging
+        # with an extra /D factor, and is usually more stable than raw L2-sum over D.
+        codebook_loss = torch.nn.functional.mse_loss(flat_z_q, flat_z_e.detach())
+        commitment_loss = torch.nn.functional.mse_loss(flat_z_e, flat_z_q.detach())
 
         flat_z_q_st = flat_z_e + (flat_z_q - flat_z_e).detach()  # (M, D)
 
@@ -141,6 +142,9 @@ class ShapeVQEncoder(nn.Module):
             nn.ReLU(),
             nn.Linear(256, num_tokens * latent_dim)
         )
+        # Break token-permutation symmetry so each slot can learn a distinct role.
+        self.token_pos_embed = nn.Parameter(torch.zeros(1, num_tokens, latent_dim))
+        nn.init.normal_(self.token_pos_embed, mean=0.0, std=0.02)
         self.vq = VectorQuantizer(num_embeddings, latent_dim)
 
     def encode(self, x, s):
@@ -151,7 +155,8 @@ class ShapeVQEncoder(nn.Module):
         point_feat = self.point_mlp(point_inp)  # (B, N, 128)
         global_feat = torch.max(point_feat, dim=1)[0]  # (B, 128)
         z_e_flat = self.latent_mlp(global_feat)  # (B, T*D)
-        return z_e_flat.view(x.size(0), self.num_tokens, self.latent_dim)  # (B, T, D)
+        z_e = z_e_flat.view(x.size(0), self.num_tokens, self.latent_dim)  # (B, T, D)
+        return z_e + self.token_pos_embed  # (B, T, D)
 
     def get_indices(self, x, s):
         z_e = self.encode(x, s)
