@@ -18,7 +18,7 @@ spec:
           "set -e && \
           git config --global credential.helper store && \
           echo \"https://oauth2:${GIT_ACCESS_TOKEN}@github.com\" > ~/.git-credentials && \
-          cd /pers_vol/tim && \
+          cd /mnt/tim && \
           if [ ! -d text2objectsdf ]; then \
             echo 'Cloning repository...' && \
             git clone https://github.com/timtutu2/Text2ObjectSDF.git text2objectsdf ; \
@@ -27,8 +27,8 @@ spec:
             cd text2objectsdf && git pull ; \
           fi && \
           pip install --no-cache-dir notebook jupyterlab debugpy ipdb gdown tqdm && \
-          cd /pers_vol/tim/text2objectsdf && \
-          export PYTHONPATH=/pers_vol/tim/text2objectsdf:${PYTHONPATH} && \
+          cd /mnt/tim/text2objectsdf && \
+          export PYTHONPATH=/mnt/tim/text2objectsdf:${PYTHONPATH} && \
           mkdir -p logs && \
           LOGFILE=logs/text2object_$(date +%Y%m%d_%H%M%S).log && \
           echo \"Saving logs to $LOGFILE\" && \
@@ -43,16 +43,16 @@ spec:
         - name: WANDB_API_KEY
           valueFrom:
             secretKeyRef:
-              name: wandb-tim-secret
+              name: wandb-tim-secret 
               key: api_key
         - name: GIT_ACCESS_TOKEN
           valueFrom:
             secretKeyRef:
-              name: tim-github-token
+              name: github--token
               key: GIT_ACCESS_TOKEN
         volumeMounts:
-        - mountPath: /pers_vol
-          name: erl-ucsd-supp
+        - mountPath: /mnt
+          name: erl-ucsd
         - mountPath: /dev/shm
           name: dshm
         resources:
@@ -173,9 +173,9 @@ spec:
                 - "NVIDIA-L40"
                 - "NVIDIA-A10"
       volumes:
-        - name: erl-ucsd-supp
+        - name: erl-ucsd
           persistentVolumeClaim:
-            claimName: erl-ucsd-supp
+            claimName: erl-ucsd
         - name: dshm
           emptyDir:
             medium: Memory

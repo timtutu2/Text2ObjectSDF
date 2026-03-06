@@ -7,14 +7,12 @@ from torch.utils.data import Dataset, DataLoader
 class Text2ObjectDataset(Dataset):
     def __init__(
         self,
-        processed_dir1: str = "data/processed",
-        processed_dir2: str = "data/processed",
+        processed_dir: str = "data/processed",
         captions_file: str = "src/data/captions.json",
         num_points_per_batch: int = 4096,
         max_models: int | None = None,
     ):
-        self.processed_dir1 = Path(processed_dir1)
-        #self.processed_dir2 = Path(processed_dir2)
+        self.processed_dir = Path(processed_dir)
 
         self.num_points_per_batch = num_points_per_batch
 
@@ -23,8 +21,7 @@ class Text2ObjectDataset(Dataset):
             self.captions_dict = json.load(f)
 
         # Build the dataset from the intersection of processed .npz files and captioned IDs.
-        all_npz = {f.stem: f for f in self.processed_dir1.glob("*.npz")}
-        #all_npz.update({f.stem: f for f in self.processed_dir2.glob("*.npz")})
+        all_npz = {f.stem: f for f in self.processed_dir.glob("*.npz")}
         
         captioned_ids = set(self.captions_dict.keys())
         npz_ids = set(all_npz.keys())

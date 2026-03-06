@@ -166,8 +166,7 @@ def main():
 
     # Initialize dataset and dataloader
     dataset = Text2ObjectDataset(
-        processed_dir1="/mnt/tim/data/ShapeNetCore/04379243_sdf", 
-        processed_dir2="/mnt/tim/data/ShapeNetCore/03001627_sdf",
+        processed_dir="/mnt/tim/data/ShapeNetCore/04379243_sdf",
         captions_file=str(PROJECT_ROOT / "src" / "data" / "captions.json"),
         num_points_per_batch=train_cfg['points_per_batch']
     )

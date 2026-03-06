@@ -232,8 +232,7 @@ def main():
         print("wandb_enabled is true but 'wandb' not installed; skipping W&B. pip install wandb")
 
     dataset = Text2ObjectDataset(
-        processed_dir1="/pers_vol/data/voxel_256_filter_div_128_solid_2",
-        processed_dir2="/mnt/tim/data/ShapeNetCore/03001627_sdf",
+        processed_dir="/pers_vol/data/voxel_256_filter_div_128_solid_2",
         captions_file=str(PROJECT_ROOT / "src" / "data" / "captions_clip77.json"),
         num_points_per_batch=train_cfg["points_per_batch"],
         max_models=10000,

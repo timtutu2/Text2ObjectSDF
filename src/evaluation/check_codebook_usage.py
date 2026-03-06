@@ -90,8 +90,7 @@ def main():
     model.load_state_dict(sd, strict=False)
 
     ds = Text2ObjectDataset(
-        processed_dir1="/mnt/tim/data/ShapeNetCore/voxel_256_filter_div_128_solid_2",
-        processed_dir2="/mnt/tim/data/ShapeNetCore/03001627_sdf",
+        processed_dir="/mnt/tim/data/ShapeNetCore/voxel_256_filter_div_128_solid_2",
         captions_file=str(PROJECT_ROOT / "src" / "data" / "captions_clip77.json"),
         num_points_per_batch=train_cfg["points_per_batch"],
         max_models=10000,)  
