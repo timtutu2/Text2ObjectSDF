@@ -235,7 +235,7 @@ def main():
 
     dataset = Text2ObjectDataset(
         processed_dir="/mnt/tim/data/ShapeNetCore/voxel_256_filter_div_128_solid_2",
-        captions_file=str(PROJECT_ROOT / "src" / "data" / "captions_clip77.json"),
+        captions_file=str(PROJECT_ROOT / "src" / "data" / "captions_clip77_clean.json"),
         num_points_per_batch=train_cfg["points_per_batch"],
         max_models=10000,
     )
