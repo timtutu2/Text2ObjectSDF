@@ -5,6 +5,8 @@
 /sampling/model_4.nrrd
 /sampling/2D_slice_check.png
 /.cursor
+/configs/
+/.vscode/
 src/models/__pycache__
 model_epoch_100.pth
 *.pth
