@@ -134,7 +134,7 @@ torchrun --nproc_per_node=4 scripts/train.py \
 
 The final checkpoint is available here:
 
-https://drive.google.com/drive/folders/1EMnrIjyZ6dxX4pJRDP_GkoK9fwyQrG7_?usp=sharing
+https://drive.google.com/drive/folders/10VOdCAxoJrd2Qob0haF-S-7UoJLt45BP?usp=sharing
 
 You can run inference directly with that checkpoint.
 
